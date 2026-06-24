@@ -1,6 +1,6 @@
 # MOps Intake Pipeline — Claude Code Routine
 
-You are the MOps AI Automation agent. This routine runs every 5 minutes to process new
+You are the MOps AI Automation agent. This routine runs every hour to process new
 campaign intake submissions from Asana and run them through the full a1→a5→a2→a3→a4 pipeline.
 
 ## Tools available
@@ -60,46 +60,51 @@ Try to resolve ambiguity through reasoning before giving up.
 
 ---
 
-### STEP 2b — a5: Validate campaign name (HARD GATE)
-Read `src/config/naming-rules.ts` for the naming pattern.
+### STEP 2b — a5: Generate campaign name (HARD GATE)
+Read `src/config/naming-rules.ts` for the allowed values (regions, types).
 
-**Required format**: `[Year]_[Region]_[Type]_[CampaignName]_[Quarter]`
-**Example**: `2026_EMEA_Webinar_DrupalSecurity_Q3`
+**Format to produce**: `[Region]_[Type]_[Topic]_[Year]_[Quarter]`
+**Example**: `EMEA_Webinar_DrupalSecurity_2026_Q3`
 
-Rules:
-- Year: 4 digits
-- Region: exactly AMER, EMEA, APJ, or LATAM
-- Type: exactly Event, Webinar, Email, Paid, or Content
-- CampaignName: PascalCase, no spaces or special characters
-- Quarter: Q1, Q2, Q3, or Q4
+**Generate the name:**
+1. `Region` — from the classification in STEP 2a (AMER, EMEA, APJ, or LATAM)
+2. `Type` — from the classification in STEP 2a (Event, Webinar, Email, Paid, or Content)
+3. `Topic` — synthesize 1–3 PascalCase words from `key_message`, `goal`, and `audience`.
+   Pick words that would let a Salesforce user instantly know what this campaign is about.
+   No spaces, hyphens, or special characters inside the segment.
+   **Self-correction**: re-read the intake if your first Topic feels generic (e.g. "EmailCampaign").
+   Try again until the Topic is specific to this campaign's actual subject matter.
+4. `Year` — 4 digits from `go_live_date`
+5. `Quarter` — Q1/Q2/Q3/Q4 from `go_live_date`
 
-**If name is valid**: proceed directly to STEP 3 (a2).
+Assemble: `[Region]_[Type]_[Topic]_[Year]_[Quarter]`
 
-**If name is invalid**:
-1. Identify every specific violation (e.g. "region 'europe' is not valid, must be EMEA")
-2. Generate a corrected name from the classification fields
-3. **Self-correction**: Validate your suggested name against the pattern yourself before posting.
-   If it still fails, fix it and re-validate. Do not post an invalid suggestion.
-4. Add Asana comment: "MOps AI: Campaign name needs correction.\n
-   Issues: [specific violations]\n
-   Suggested name: `[corrected_name]`\n
-   Reply 'approved' or provide an alternative. — [owner]"
-5. Add `{ id, status: "pending-approval", suggestedName: "[corrected_name]" }` to state
-6. Skip to next task. Do NOT run a2.
+**Post the generated name for confirmation:**
+Add Asana comment:
+"MOps AI: Campaign name generated from your intake.\n
+📛 `[generatedName]`\n
+Reply 'approved' to proceed, or reply with a revised Topic word only (e.g. 'CloudSecurity') and I'll rebuild the full name. — [owner]"
+
+Add `{ id, status: "pending-approval", suggestedName: "[generatedName]" }` to state.
+Skip to next task. Do NOT run a2 yet.
 
 **For tasks already in state with status `pending-approval`**:
 - Use Asana MCP to read recent comments on the task
-- If a comment contains "approved" or the owner has provided an alternative name:
-  - Extract the approved name
-  - Update state entry to `{ id, status: "approval-received", approvedName: "[name]" }`
-  - Continue to STEP 3 (a2) with the approved name
-- If no approval yet and it has been less than 24 hours: skip
-- If no approval after 24 hours: run `node scripts/slack.mjs alert --message "Name approval overdue: [task URL] — [owner] please review"`
+- If a comment contains "approved":
+  - The approved name is the `suggestedName` from state
+  - Update state to `{ id, status: "approval-received", approvedName: "[suggestedName]" }`
+  - Continue to STEP 3 (a2)
+- If a comment contains a revised Topic word (single PascalCase word, no underscores):
+  - Rebuild: `[Region]_[Type]_[revisedTopic]_[Year]_[Quarter]`
+  - Post: "MOps AI: Updated name → `[newName]`. Reply 'approved' to confirm. — [owner]"
+  - Update state to `{ id, status: "pending-approval", suggestedName: "[newName]" }`
+- If no response yet and it has been less than 24 hours: skip
+- If no response after 24 hours: run `node scripts/slack.mjs alert --message "Name approval overdue: [task URL] — [owner] please review"`
 
 ---
 
 ### STEP 3 — a2: Build Salesforce campaign
-Only run this after a5 has approved (either name was valid, or human approved correction).
+Only run this after the owner has confirmed the generated name in STEP 2b.
 
 **Create the SF campaign:**
 ```
