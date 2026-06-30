@@ -7,6 +7,6 @@
     "sf": "node scripts/salesforce.mjs",
     "pardot": "node scripts/pardot.mjs",
     "slack": "node scripts/slack.mjs",
-    "airtable": "node scripts/airtable.mjs"
+    "sheets": "node scripts/sheets.mjs"
   }
 }

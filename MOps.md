@@ -50,7 +50,7 @@ a1 (triage)  →  a5 (naming GATE)  →  a2 (SF build)  →  a3 (assets)  →  a
 | # | Name | What it does | Key systems |
 |---|------|--------------|-------------|
 | a1 | Intake triage | Reads the form, classifies type & region, extracts fields, flags missing/contradictory data, routes to the regional owner, sets priority, confirms to requestor | Asana, Claude |
-| a2 | SF campaign + statuses | Creates the SF campaign (name, type, dates, budget), applies the member-status set for the type, links parent campaign, creates the Pardot connected campaign | Salesforce, Pardot |
+| a2 | SF campaign spec (read-only) | **Claude Code has read-only SF access.** Checks SF for an existing campaign by name; if absent, builds the complete spec (name, type, dates, budget, member-status list) and posts it as an Asana comment for the SF admin to create manually. Sets state to `pending-sf-creation`. On the next run, scans comments for an 18-char SF Campaign ID (starts with `701`), verifies it via a read-only SF lookup, then unblocks a3/a4. Escalates via Slack after 24 h with no reply. Admin is also asked to link the Pardot connected campaign in Account Engagement. | Salesforce (read), Asana, Slack |
 | a3 | Asset checklist + subtasks | Generates the per-type asset checklist and creates every Asana subtask | Asana, Claude |
 | a4 | Brief drafting | Turns intake into a one-page brief (objective, audience, messaging, KPIs, assets, timeline); attaches to the Asana task and SF campaign | Claude, Asana, Salesforce |
 | a5 | Name generator **(gate)** | Generates the canonical campaign name from intake fields (`Region_Type_Topic_Year_Quarter`), posts it to Asana for owner confirmation, and gates `a2` until approved | Claude |
@@ -67,8 +67,8 @@ a1 (triage)  →  a5 (naming GATE)  →  a2 (SF build)  →  a3 (assets)  →  a
 | Run / host | **Claude Code routines** | Scheduled agents (hourly minimum). No separate run host needed. See §7. |
 | Reasoning | **Claude (native)** | The routine *is* Claude — no SDK wrapper needed for reasoning. Claude calls Bash scripts for external systems. |
 | Asana | **Asana MCP** | All Asana reads/writes go through the Asana MCP tool (not a custom lib). |
-| Connect | Salesforce, Pardot, Slack, Airtable | Plain Node `.mjs` scripts in `scripts/` called via Bash. |
-| Config / audit | **Airtable** | Editable rules + per-decision audit log. The team edits a sheet, not code. |
+| Connect | Salesforce, Pardot, Slack, Google Sheets | Plain Node `.mjs` scripts in `scripts/` called via Bash. |
+| Config / audit | **Google Sheets** | Editable rules + per-decision audit log. The team edits a sheet, not code. |
 | State | **`state/processed-tasks.json`** | Persistent JSON array tracking each task's pipeline status across runs. |
 | Testing / UI gaps | **Playwright** | End-to-end tests (submit the real Asana form, verify the pipeline) and the rare UI-only action where no API exists. Used sparingly — APIs first. |
 
@@ -84,22 +84,22 @@ The system will be owned long-term by **non-technical regional MOps owners**:
 They cannot read a stack trace, redeploy a container, or fix code. The build must therefore be
 maintainable *without* engineering:
 
-1. **Editable rules live in Airtable**, never hardcoded — naming rules, the region→owner routing
+1. **Editable rules live in Google Sheets**, never hardcoded — naming rules, the region→owner routing
    table, member statuses, asset checklists, message templates. Changing a rule = editing a row.
-2. **Visibility via Airtable audit log + Slack alerts** — every run logs its decisions to Airtable
+2. **Visibility via Google Sheets audit log + Slack alerts** — every run logs its decisions to Google Sheets
    keyed by Asana task ID; failures fire a Slack alert. Owners can see what happened without code.
 3. **Human-in-the-loop** on low-confidence classifications (flagged in Asana + Slack) and naming
    corrections (require Asana comment approval before Salesforce is touched).
 4. **A named technical escalation contact** in the handoff playbook for breakages no rule edit can fix.
 
-> Honest caveat: this is still a code project. Keep anything that changes often in Airtable; keep the
+> Honest caveat: this is still a code project. Keep anything that changes often in Google Sheets; keep the
 > routine logic stable and rarely-touched.
 
 ---
 
 ## 6. Domain ground truth (the rules the automations enforce)
 
-> These values are mirrored in Airtable (and/or `src/config/`) so they can be edited without code.
+> These values are mirrored in Google Sheets (and/or `src/config/`) so they can be edited without code.
 > The lists below are the current truth; confirm against the live org during the Week 1–2 ramp.
 
 ### 6.1 Naming convention
@@ -158,14 +158,15 @@ Escalate if the owner does not respond within **24 hours**.
 - A **routine** is a Markdown file in `routines/` that Claude Code executes as a scheduled agent.
 - The routine prompt describes every step Claude must take; Claude uses its native reasoning plus
   **Asana MCP** (for all Asana operations) and **Bash** (to call `scripts/*.mjs` for SF, Pardot,
-  Slack, Airtable) to carry out the steps.
+  Slack, Google Sheets) to carry out the steps.
 - Minimum schedule interval is **1 hour**. Intake pipeline runs `0 * * * *`.
 
 ### State persistence
 - Idempotency is handled via **`state/processed-tasks.json`** — a JSON array of
   `{ id, status, approvedName?, sfCampaignId? }` objects. Claude reads this at the start of
   every run and skips tasks already marked `completed`.
-- Statuses: `flagged` | `pending-approval` | `approval-received` | `completed` | `error`.
+- Statuses: `flagged` | `pending-approval` | `approval-received` | `pending-sf-creation` | `completed` | `error`.
+  - `pending-sf-creation` — spec posted to Asana, waiting for the SF admin to create the campaign and reply with the Campaign ID.
 
 ### Human-in-the-loop
 - **Naming corrections**: Claude posts an Asana comment with the suggested fix, sets status to
@@ -174,15 +175,23 @@ Escalate if the owner does not respond within **24 hours**.
   `node scripts/slack.mjs alert`.
 
 ### Calling external systems
-All writes to Salesforce, Pardot, Slack, and Airtable go through scripts:
+All calls to Salesforce, Slack, and Google Sheets go through scripts:
 ```bash
-node scripts/salesforce.mjs create-campaign --name "..." --type "..." ...
-node scripts/salesforce.mjs add-member-statuses --campaign-id "..." --type "..."
-node scripts/pardot.mjs create-campaign --sf-campaign-id "..." --name "..."
+# Salesforce — READ-ONLY (Claude Code does not have write access to SF)
+node scripts/salesforce.mjs find-campaign --name "..."       # look up by exact name
+node scripts/salesforce.mjs find-campaign --id "701..."      # verify an ID posted by the admin
+node scripts/salesforce.mjs list-active-campaigns            # used by sync watchdog (a6)
+
+# Slack, Google Sheets
 node scripts/slack.mjs alert --message "..."
-node scripts/airtable.mjs log --task-id "..." --automation "..." --decision "..."
+node scripts/sheets.mjs log --task-id "..." --automation "..." --decision "..."
+node scripts/sheets.mjs get-similar --limit 3
 ```
 Scripts output JSON on stdout. Claude reads the JSON and handles errors.
+
+> **Pardot:** The Pardot connected campaign is created by the SF admin as part of the manual
+> creation step. The spec comment in a2 instructs the admin to link it in Account Engagement.
+> `scripts/pardot.mjs` is used only by the sync watchdog (a6) for read-only list comparison.
 
 ### Error handling pattern
 - On a recoverable error: adjust the offending field and retry once.
@@ -209,14 +218,14 @@ mops-ai-automation/
 │   ├── intake-pipeline.md         # Claude Code routine: a1 → a5 gate → a2 → a3 → a4 (hourly)
 │   └── sync-watchdog.md           # Claude Code routine: a6 Pardot/SF sync check (daily + weekly)
 ├── scripts/                       # Node.js ESM scripts called via Bash from routines
-│   ├── salesforce.mjs             # create-campaign, add-member-statuses, list-active-campaigns
-│   ├── pardot.mjs                 # create-campaign, list-campaigns
+│   ├── salesforce.mjs             # find-campaign (by name or ID), list-active-campaigns — READ-ONLY
+│   ├── pardot.mjs                 # list-campaigns — read-only; used by sync watchdog only
 │   ├── slack.mjs                  # alert
-│   └── airtable.mjs               # log, get-similar
+│   └── sheets.mjs                 # Google Sheets audit log, get-similar
 ├── state/
 │   └── processed-tasks.json       # idempotency state — array of { id, status, ... }
 ├── src/
-│   └── config/                    # editable rules (mirrored in Airtable)
+│   └── config/                    # editable rules (mirrored in Google Sheets)
 │       ├── naming-rules.ts
 │       ├── routing.ts
 │       ├── member-statuses.ts
@@ -235,10 +244,10 @@ mops-ai-automation/
 
 | Day(s) | Milestone | Deliverable |
 |--------|-----------|-------------|
-| **0 (parallel, blocking)** | **Access + ground truth** | Asana MCP token, Salesforce Connected App, Pardot OAuth, Slack token. Document live SF campaign fields + status sets and the real Asana form fields into Airtable/`src/config/` (fills §6 + §12). *This is the true bottleneck — start it immediately.* |
-| **1** | **Scaffold + scripts** | Repo structure, `src/config/` files, stub scripts in `scripts/` (salesforce.mjs, pardot.mjs, slack.mjs, airtable.mjs), `state/processed-tasks.json` init. |
+| **0 (parallel, blocking)** | **Access + ground truth** | Asana MCP token, Salesforce Connected App, Pardot OAuth, Slack token. Document live SF campaign fields + status sets and the real Asana form fields into Google Sheets/`src/config/` (fills §6 + §12). *This is the true bottleneck — start it immediately.* |
+| **1** | **Scaffold + scripts** | Repo structure, `src/config/` files, stub scripts in `scripts/` (salesforce.mjs, pardot.mjs, slack.mjs, sheets.mjs), `state/processed-tasks.json` init. |
 | **2–3** | **Front gate** | `routines/intake-pipeline.md` with a1 triage + a5 naming gate wired up. Test with a mock Asana task. |
-| **3–4** | **SF build** | `scripts/salesforce.mjs` create-campaign + add-member-statuses. Wire into routine as STEP 3. *Riskiest integration — leave buffer.* |
+| **3–4** | **SF spec + polling** | `scripts/salesforce.mjs` read-only commands (find-campaign by name/ID). Wire a2 spec-posting and ID-polling into routine as STEP 3. No SF write access — campaign creation is delegated to the SF admin via Asana comment. |
 | **4–5** | **Generate** | a3 asset checklist via Asana MCP subtask creation + a4 brief posting as Asana comment. |
 | **5** | **Watchdog** | `routines/sync-watchdog.md` + `scripts/pardot.mjs` list-campaigns. Schedule daily + weekly. |
 | **6** | **QA** | Playwright e2e (submit the real form → assert the pipeline ran); fix bugs; state idempotency check (run twice, verify no duplicates). |
@@ -256,14 +265,22 @@ fast-follows. Don't let the watchdog or brief drafting block the core launch.
 ## 10. Coding conventions & guardrails
 
 - Each automation is a named step inside `routines/intake-pipeline.md`, not a separate file.
-- All external **writes** (SF create, Slack send) go through `scripts/*.mjs` called via Bash — never
+- All external calls (SF lookups, Slack sends) go through `scripts/*.mjs` called via Bash — never
   inline fetch calls inside the routine prompt.
+- **Salesforce access is READ-ONLY.** The routine checks whether a campaign exists and verifies IDs,
+  but never creates or mutates SF records. Campaign creation is delegated to the SF admin via a
+  structured Asana spec comment; the routine polls for the admin's reply (an 18-char ID starting
+  with `701`) before proceeding to a3/a4.
+- **Pardot creation is also delegated to the SF admin** as part of the spec comment — the admin
+  links the connected campaign in Account Engagement after creating the SF record.
+  `scripts/pardot.mjs` is used only by the sync watchdog (a6) for read-only comparison.
 - **All Asana reads/writes use the Asana MCP** — never call the Asana REST API directly.
-- **Log every AI decision** to the audit store (Airtable) via `node scripts/airtable.mjs log`.
+- **Log every AI decision** to the audit store (Google Sheets) via `node scripts/sheets.mjs log`.
 - Secrets come from **environment variables only**; never commit real keys.
 - **Idempotency** is enforced by checking `state/processed-tasks.json` before processing any task.
-- **Human-in-the-loop:** naming corrections require an Asana comment approval before a2 runs.
-  Low-confidence triage is flagged and skipped — a human must clarify before the routine picks it up.
+- **Human-in-the-loop:** (1) naming corrections require Asana comment approval before a2 runs;
+  (2) SF campaign creation requires the SF admin to create the record and reply with the Campaign ID;
+  (3) low-confidence triage is flagged and skipped — a human must clarify before the routine picks it up.
 - Prefer **APIs and MCP over Playwright**; only drive a browser where no API exists.
 
 ---
@@ -284,7 +301,7 @@ what triggers them — write it to name the trigger):
 ## 12. Still needs real-org ground truth (resolve during ramp)
 
 These cannot be guessed from training data — confirm against the live org and put the answers in
-Airtable / `src/config/`:
+Google Sheets / `src/config/`:
 - The live **Asana intake form fields** and their custom-field GIDs (so `a1` can map them).
 - The exact **Salesforce field API names**, record types, and required fields for Campaigns.
 - The real **member-status picklists** per type (verify §6.3 matches the org).

@@ -27,7 +27,7 @@ This project uses **Claude Code cloud routines** — scheduled AI agents that ru
 - Clones this repo on each run
 - Reads `routines/intake-pipeline.md` for instructions
 - Uses the **Asana MCP** for all Asana operations (authenticated automatically)
-- Runs `scripts/*.mjs` for Salesforce, Pardot, Slack, and Airtable operations
+- Runs `scripts/*.mjs` for Salesforce, Pardot, Slack, and Google Sheets operations
 
 ### Self-correcting behavior
 
@@ -40,14 +40,14 @@ Unlike a fixed script, the agent reasons about errors and retries with corrected
 - **[Claude Code Routines](https://claude.ai/code/routines)** — scheduled cloud agents, hourly intake + daily watchdog
 - **[Asana MCP](https://mcp.asana.com)** — native Asana integration (read tasks, add comments, create subtasks)
 - **Claude AI (Sonnet 4.6)** — classification, naming correction, brief drafting, self-correction
-- **Node.js ESM scripts** — lightweight API helpers for Salesforce, Pardot, Slack, Airtable (no npm dependencies)
+- **Node.js ESM scripts** — lightweight API helpers for Salesforce, Pardot, Slack, Google Sheets (no npm dependencies)
 
 ### Integrations
 - Asana (intake form, subtasks, comments) — via MCP
 - Salesforce (campaign + member statuses) — via `scripts/salesforce.mjs`
 - Pardot / Account Engagement (connected campaigns) — via `scripts/pardot.mjs`
 - Slack (alerts and weekly health report) — via `scripts/slack.mjs`
-- Airtable (AI decision audit trail) — via `scripts/airtable.mjs`
+- Google Sheets (AI decision audit trail) — via `scripts/sheets.mjs`
 
 ---
 
@@ -62,7 +62,7 @@ scripts/
 ├── salesforce.mjs        # SF OAuth + campaign creation + member statuses
 ├── pardot.mjs            # Pardot connected campaign creation
 ├── slack.mjs             # Slack alert sender
-└── airtable.mjs          # Audit log writer + similar campaign lookup
+└── sheets.mjs            # Google Sheets audit log + similar campaign lookup
 
 src/config/
 ├── naming-rules.ts       # Naming convention regex, validator, builder
@@ -127,9 +127,10 @@ The two live routines are at:
 | `PARDOT_BUSINESS_UNIT_ID` | Account Engagement → Settings → Business Unit Setup |
 | `SLACK_BOT_TOKEN` | [api.slack.com/apps](https://api.slack.com/apps) → Your app → OAuth tokens |
 | `SLACK_ALERT_CHANNEL` | Slack channel ID (right-click channel → Copy link) |
-| `AIRTABLE_API_KEY` | [airtable.com/create/tokens](https://airtable.com/create/tokens) |
-| `AIRTABLE_BASE_ID` | Airtable URL: `airtable.com/{base_id}` |
-| `AIRTABLE_AUDIT_TABLE_ID` | Airtable URL: `airtable.com/{base_id}/{table_id}` |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Google Cloud → IAM → Service Accounts |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | Service account → Keys → Add Key → JSON (copy the `private_key` field) |
+| `GOOGLE_SHEETS_SPREADSHEET_ID` | Google Sheets URL — the ID between `/d/` and `/edit` |
+| `GOOGLE_SHEETS_AUDIT_SHEET` | Name of the sheet tab for the audit log (e.g. `AuditLog`) |
 
 ---
 
@@ -176,7 +177,7 @@ Before going live, confirm these values from your org:
 | 2 | `SF_CAMPAIGN_RECORD_TYPE_ID` | `.env` | SF Setup → Campaign → Record Types |
 | 3 | `SF_FIELDS.BUDGET` | `scripts/salesforce.mjs` | Verify `BudgetedCost` field API name |
 | 4 | `PARDOT_BUSINESS_UNIT_ID` | `.env` | Account Engagement → Settings |
-| 5 | `AIRTABLE_BASE_ID` | `.env` | Airtable base URL |
+| 5 | `GOOGLE_SHEETS_SPREADSHEET_ID` | `.env` | Google Sheets URL — the ID between `/d/` and `/edit` |
 | 6 | `SLACK_ALERT_CHANNEL` | `.env` | Slack channel ID |
 | 7 | Pardot member count field | `scripts/pardot.mjs` | Pardot API v5 docs |
 

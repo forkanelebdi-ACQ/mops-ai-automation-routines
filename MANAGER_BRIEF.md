@@ -97,7 +97,7 @@ Campaigns are automatically assigned to the regional owner based on the campaign
 | **Salesforce** | Campaign records and member status management |
 | **Pardot / Account Engagement** | Connected campaign creation and sync monitoring |
 | **Slack** | Alerts for sync issues and escalations |
-| **Airtable** | Audit trail — every AI decision is logged per campaign |
+| **Google Sheets** | Audit trail — every AI decision is logged per campaign |
 | **Claude AI (Sonnet 4.6)** | Classification, naming correction, brief drafting, self-correction |
 | **Claude Code Routines** | Scheduling infrastructure — no dedicated server required |
 
@@ -112,7 +112,7 @@ The full automation pipeline is built and running as scheduled cloud routines. T
 - Asana intake project ID
 - Salesforce Campaign Record Type ID
 - Pardot Business Unit ID
-- Airtable base and table IDs
+- Google Sheets spreadsheet ID and audit sheet tab name
 - Slack alert channel ID
 
 Once these are filled in, the agent will begin processing real campaign submissions automatically.

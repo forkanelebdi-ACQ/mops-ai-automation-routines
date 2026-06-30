@@ -99,7 +99,7 @@ From a single Asana form submission, the system automatically:
           │
           ├──────────────────▶  Pardot / Account Engagement (scripts/pardot.mjs)
           │
-          ├──────────────────▶  Airtable — per-decision audit log (scripts/airtable.mjs)
+          ├──────────────────▶  Google Sheets — per-decision audit log (scripts/sheets.mjs)
           │
           └──────────────────▶  Slack — health alerts (scripts/slack.mjs)
 ```
@@ -160,7 +160,7 @@ intake-pipeline routine (every hour)
         │     Posts as Asana comment
         │
         └─▶ Log + update state
-              node scripts/airtable.mjs log
+              node scripts/sheets.mjs log
               Writes completed task ID to state/processed-tasks.json
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -392,12 +392,14 @@ Each script:
 |---------|-------------|
 | `alert --message "..."` | `POST https://slack.com/api/chat.postMessage` to `SLACK_ALERT_CHANNEL` |
 
-### `scripts/airtable.mjs`
+### `scripts/sheets.mjs`
 
 | Command | What it does |
 |---------|-------------|
-| `log` | Appends one audit row: task ID, automation, decision, type, region, SF campaign ID, timestamp |
-| `get-similar --limit N` | Returns N most recent completed entries for self-improvement context |
+| `log` | Appends one audit row to the Google Sheets audit tab: task ID, automation, decision, type, region, SF campaign ID, timestamp |
+| `get-similar --limit N` | Reads the audit sheet, filters rows where Decision = "completed", returns the N most recent for self-improvement context |
+
+**Auth:** Service account JWT (RS256) via Node's built-in `crypto.createSign` — no npm dependency. Exchanges the JWT for an OAuth2 access token at `oauth2.googleapis.com/token`, then calls Sheets API v4.
 
 ---
 
@@ -415,7 +417,7 @@ Unlike a fixed script, the Claude agent reasons about failures and adjusts.
 | Missing brief section | Checks all 6 sections before posting; adds any that are missing |
 | Unrecoverable error | Sends Slack alert, adds Asana comment, marks task as `error` in state, moves to next task |
 
-**Self-improvement:** Before classifying each campaign, the agent calls `scripts/airtable.mjs get-similar` to retrieve recent successful campaigns as context examples. Classification accuracy improves over time as more examples accumulate.
+**Self-improvement:** Before classifying each campaign, the agent calls `scripts/sheets.mjs get-similar` to retrieve recent successful campaigns as context examples. Classification accuracy improves over time as more examples accumulate.
 
 ---
 
@@ -437,9 +439,10 @@ Unlike a fixed script, the Claude agent reasons about failures and adjusts.
 | `PARDOT_BUSINESS_UNIT_ID` | `scripts/pardot.mjs` | 18-char Account Engagement BU ID (`0Uv…`) |
 | `SLACK_BOT_TOKEN` | `scripts/slack.mjs` | Bot OAuth token (`xoxb-…`) |
 | `SLACK_ALERT_CHANNEL` | `scripts/slack.mjs` | Channel ID for health alerts |
-| `AIRTABLE_API_KEY` | `scripts/airtable.mjs` | Airtable personal access token |
-| `AIRTABLE_BASE_ID` | `scripts/airtable.mjs` | Base ID from Airtable URL (`appXXXXXXXXXXXXXX`) |
-| `AIRTABLE_AUDIT_TABLE_ID` | `scripts/airtable.mjs` | Table name or ID for the audit log |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | `scripts/sheets.mjs` | Service account email (e.g. `mops-bot@project.iam.gserviceaccount.com`) |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | `scripts/sheets.mjs` | RSA private key PEM — copy `private_key` from service account JSON; replace literal `\n` with newlines |
+| `GOOGLE_SHEETS_SPREADSHEET_ID` | `scripts/sheets.mjs` | Spreadsheet ID from the URL (between `/d/` and `/edit`) |
+| `GOOGLE_SHEETS_AUDIT_SHEET` | `scripts/sheets.mjs` | Sheet tab name for the audit log (default: `AuditLog`) |
 
 ---
 
@@ -528,8 +531,8 @@ Values that must be confirmed from the live org before going live:
 | 4 | `SF_PARDOT_CAMPAIGN_ID_FIELD` | `scripts/salesforce.mjs` | Confirm `ConnectedCampaignId` field name |
 | 5 | `PARDOT_BUSINESS_UNIT_ID` | `.env` | Account Engagement → Settings → Business Unit Setup |
 | 6 | Pardot member count field | `scripts/pardot.mjs` | Pardot API v5 docs — campaign object response |
-| 7 | `AIRTABLE_BASE_ID` | `.env` | Airtable base URL |
-| 8 | `AIRTABLE_AUDIT_TABLE_ID` | `.env` | Airtable table name or ID |
+| 7 | `GOOGLE_SHEETS_SPREADSHEET_ID` | `.env` | Google Sheets URL — the ID between `/d/` and `/edit` |
+| 8 | `GOOGLE_SHEETS_AUDIT_SHEET` | `.env` | Sheet tab name for the audit log (e.g. `AuditLog`) |
 | 9 | `SLACK_ALERT_CHANNEL` | `.env` | Slack channel ID (starts with `C`) |
 
 ---
@@ -555,7 +558,7 @@ mops-ai-automation/
 │   ├── salesforce.mjs             # SF OAuth + campaign CRUD
 │   ├── pardot.mjs                 # Pardot API v5 operations
 │   ├── slack.mjs                  # Slack alert sender
-│   └── airtable.mjs               # Audit log + similar campaign lookup
+│   └── sheets.mjs                 # Google Sheets audit log + similar campaign lookup
 │
 ├── src/
 │   └── config/                    # Business rules — Claude reads these on each run
