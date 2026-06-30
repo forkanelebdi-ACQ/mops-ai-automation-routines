@@ -5,7 +5,7 @@ campaign intake submissions from Asana and run them through the full a1→a5→a
 
 ## Tools available
 - **Asana MCP**: All Asana operations — read tasks, add comments, create subtasks
-- **Bash**: Run scripts in `scripts/` for Salesforce, Pardot, Slack, Airtable
+- **Bash**: Run scripts in `scripts/` for Salesforce, Pardot, Slack, Google Sheets
 - **Read / Write**: Read config files and update state
 
 ## On every run, execute these steps in order:
@@ -61,29 +61,26 @@ Try to resolve ambiguity through reasoning before giving up.
 ---
 
 ### STEP 2b — a5: Generate campaign name (HARD GATE)
-Read `src/config/naming-rules.ts` for the allowed values (regions, types).
+Read `src/config/naming-rules.ts` for the allowed values (regions, channels).
 
-**Format to produce**: `[Region]_[Type]_[Topic]_[Year]_[Quarter]`
-**Example**: `EMEA_Webinar_DrupalSecurity_2026_Q3`
+**Format**: `Region_Channel_Product_Description_YYYY-Qn`
+**Example**: `EMEA_Webinar_AcquiaCMS_DrupalSecurityForEnterprises_2026-Q3`
 
 **Generate the name:**
 1. `Region` — from the classification in STEP 2a (AMER, EMEA, APJ, or LATAM)
-2. `Type` — from the classification in STEP 2a (Event, Webinar, Email, Paid, or Content)
-3. `Topic` — synthesize 1–3 PascalCase words from `key_message`, `goal`, and `audience`.
-   Pick words that would let a Salesforce user instantly know what this campaign is about.
-   No spaces, hyphens, or special characters inside the segment.
-   **Self-correction**: re-read the intake if your first Topic feels generic (e.g. "EmailCampaign").
-   Try again until the Topic is specific to this campaign's actual subject matter.
-4. `Year` — 4 digits from `go_live_date`
-5. `Quarter` — Q1/Q2/Q3/Q4 from `go_live_date`
+2. `Channel` — from the classification in STEP 2a (Event, Webinar, Email, Paid, or Content)
+3. `Product` — PascalCase name of the Acquia product this campaign promotes (e.g. `AcquiaCMS`, `CloudPlatform`, `SiteStudio`). Use `Acquia` for brand-level or cross-product campaigns.
+4. `Description` — PascalCase, 2–4 words drawn from `key_message` and `goal`. Must be specific enough that any team member instantly knows what the campaign is about.
+   **Self-correction**: if your first draft is generic (e.g. `EmailCampaign`), reread the intake and try again.
+5. `Date` — `YYYY-Qn` derived from `go_live_date` (e.g. `2026-Q3`)
 
-Assemble: `[Region]_[Type]_[Topic]_[Year]_[Quarter]`
+Assemble: `[Region]_[Channel]_[Product]_[Description]_[YYYY-Qn]`
 
 **Post the generated name for confirmation:**
 Add Asana comment:
 "MOps AI: Campaign name generated from your intake.\n
 📛 `[generatedName]`\n
-Reply 'approved' to proceed, or reply with a revised Topic word only (e.g. 'CloudSecurity') and I'll rebuild the full name. — [owner]"
+Reply 'approved' to proceed, or suggest a revised Product or Description (PascalCase, no underscores) and I'll rebuild. — [owner]"
 
 Add `{ id, status: "pending-approval", suggestedName: "[generatedName]" }` to state.
 Skip to next task. Do NOT run a2 yet.
@@ -94,8 +91,8 @@ Skip to next task. Do NOT run a2 yet.
   - The approved name is the `suggestedName` from state
   - Update state to `{ id, status: "approval-received", approvedName: "[suggestedName]" }`
   - Continue to STEP 3 (a2)
-- If a comment contains a revised Topic word (single PascalCase word, no underscores):
-  - Rebuild: `[Region]_[Type]_[revisedTopic]_[Year]_[Quarter]`
+- If a comment contains a revised Product or Description (PascalCase word, no underscores):
+  - Rebuild using the same Region, Channel, and Date; replace only the revised segment(s)
   - Post: "MOps AI: Updated name → `[newName]`. Reply 'approved' to confirm. — [owner]"
   - Update state to `{ id, status: "pending-approval", suggestedName: "[newName]" }`
 - If no response yet and it has been less than 24 hours: skip
@@ -103,41 +100,78 @@ Skip to next task. Do NOT run a2 yet.
 
 ---
 
-### STEP 3 — a2: Build Salesforce campaign
-Only run this after the owner has confirmed the generated name in STEP 2b.
+### STEP 3 — a2: SF campaign spec (read-only mode)
 
-**Create the SF campaign:**
-```
-node scripts/salesforce.mjs create-campaign \
-  --name "[approvedName]" \
-  --type "[type]" \
-  --region "[region]" \
-  --go-live "[goLiveDate]" \
-  --budget "[budget]" \
-  --owner "[owner]"
-```
-Read the JSON output: `{ sfCampaignId: "..." }` on success or `{ error: "...", code: "..." }` on failure.
+> **Claude Code has READ-ONLY Salesforce access.** Do not attempt to create or modify any SF record.
+> The SF admin creates the campaign manually; this step builds the complete spec and coordinates
+> via Asana comments.
 
-**Self-correction on failure**:
-- Field validation error → adjust the offending field value and retry once
-- Auth error → token expired; the script handles refresh automatically, retry once
-- Duplicate error → SF campaign may already exist; search before creating, return existing ID
-- If fails twice → add Asana comment with the error, run Slack alert, mark as `error` in state, skip to next task
+**For tasks with status `approval-received`** (first time reaching a2):
 
-**Add member statuses:**
+1. **Check if the campaign already exists in SF:**
 ```
-node scripts/salesforce.mjs add-member-statuses \
-  --campaign-id "[sfCampaignId]" \
-  --type "[type]"
+node scripts/salesforce.mjs find-campaign --name "[approvedName]"
+```
+Output: `{ found: true, sfCampaignId: "..." }` or `{ found: false }`.
+- If `found: true` → use the existing ID, update state to
+  `{ id, status: "pending-sf-creation", sfCampaignId: "...", specPostedAt: "[timestamp]" }`,
+  and continue directly to STEP 4 (skip posting the spec comment).
+- If `found: false` → proceed to post the spec.
+
+2. **Post the SF campaign spec as an Asana comment** for the SF admin:
+```
+📋 SF Campaign Spec — Ready for Creation
+
+Campaign Name:  [approvedName]
+Type:           [type]
+Region:         [region]
+Go-Live Date:   [goLiveDate]
+Budget:         [budget]
+Owner (MOps):   [owner]
+
+Member Statuses to apply:
+[list the statuses for this type from the naming-rules config]
+
+Action required:
+1. Create this campaign in Salesforce using the exact name above.
+2. Reply to this Asana comment with the SF Campaign ID
+   (18-character string starting with 701, e.g. 7013X000001AbCdEFG).
+3. In Account Engagement (Pardot), link a Connected Campaign to this SF Campaign
+   using the same name: [approvedName]
+
+— MOps AI
 ```
 
-**Create Pardot connected campaign (non-fatal):**
-```
-node scripts/pardot.mjs create-campaign \
-  --sf-campaign-id "[sfCampaignId]" \
-  --name "[approvedName]"
-```
-If this fails, log the error and continue. Do not block a3/a4 for a Pardot failure.
+3. Update state:
+   `{ id, status: "pending-sf-creation", suggestedName: "[approvedName]", specPostedAt: "[ISO timestamp]" }`.
+   Skip to next task. Do NOT run a3/a4 yet.
+
+---
+
+**For tasks already in state with status `pending-sf-creation`**:
+- Use Asana MCP to read recent comments on the task.
+- Scan all comments for an 18-character Salesforce Campaign ID (starts with `701`).
+- **If an ID is found:**
+  1. Verify it exists in SF:
+     ```
+     node scripts/salesforce.mjs find-campaign --id "[sfCampaignId]"
+     ```
+     Output: `{ found: true, name: "..." }` or `{ found: false }`.
+  2. If `found: true` and the name matches `[approvedName]`:
+     - Update state to `{ id, status: "pending-sf-creation", sfCampaignId: "[sfCampaignId]" }`.
+     - Continue to STEP 4 (a3) in this same run.
+  3. If `found: true` but name does not match `[approvedName]`:
+     - Add Asana comment: "MOps AI: The SF Campaign ID [id] points to '[actualName]', not '[approvedName]'. Please verify and reply with the correct ID. — [owner]"
+     - Run Slack alert, leave state as `pending-sf-creation`. Do not continue.
+  4. If `found: false`:
+     - Add Asana comment: "MOps AI: Could not find SF Campaign ID [id] — please verify and re-reply. — [owner]"
+     - Leave state as `pending-sf-creation`. Do not continue.
+- **If no ID found and < 24 hours since `specPostedAt`**: skip.
+- **If no ID found after 24 hours**:
+  ```
+  node scripts/slack.mjs alert --message "SF creation overdue: [task URL] — SF admin please create the campaign and reply with the Campaign ID. Owner: [owner]"
+  ```
+  Leave state as `pending-sf-creation`. Continue polling on the next run.
 
 ---
 
@@ -185,9 +219,9 @@ Add brief as Asana comment: "📋 Campaign Brief — Auto-generated by MOps AI\n
 
 ---
 
-### STEP 6 — Log to Airtable
+### STEP 6 — Log to Google Sheets
 ```
-node scripts/airtable.mjs log \
+node scripts/sheets.mjs log \
   --task-id "[asanaTaskId]" \
   --automation "intake-pipeline" \
   --decision "completed" \
@@ -202,11 +236,14 @@ node scripts/airtable.mjs log \
 Add `{ id: "[asanaTaskId]", status: "completed", sfCampaignId: "[sfCampaignId]", approvedName: "[approvedName]" }` to the state array.
 Write the updated array back to `state/processed-tasks.json`.
 
+> **State status reference** (all possible values across the pipeline):
+> `flagged` | `pending-approval` | `approval-received` | `pending-sf-creation` | `completed` | `error`
+
 ---
 
 ## Self-improvement (run before classifying each campaign)
 ```
-node scripts/airtable.mjs get-similar --limit 3
+node scripts/sheets.mjs get-similar --limit 3
 ```
 Use the returned past campaigns as context clues when classifying the current one.
 If a past campaign had a similar name and was classified as a certain type, weight that in your decision.

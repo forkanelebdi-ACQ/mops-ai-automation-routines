@@ -1,24 +1,25 @@
-// §6.1 Naming convention: [Year]_[Region]_[Type]_[CampaignName]_[Quarter]
-// e.g. 2026_EMEA_Webinar_DrupalSecurity_Q3
+// §6.1 Naming convention: Region_Channel_Product_Description_YYYY-Qn
+// e.g. EMEA_Webinar_AcquiaCMS_DrupalSecurityForEnterprises_2026-Q3
 
 export const VALID_REGIONS = ["AMER", "EMEA", "APJ", "LATAM"] as const;
 export type Region = (typeof VALID_REGIONS)[number];
 
-export const VALID_TYPES = ["Event", "Webinar", "Email", "Paid", "Content"] as const;
-export type CampaignType = (typeof VALID_TYPES)[number];
+export const VALID_CHANNELS = ["Event", "Webinar", "Email", "Paid", "Content"] as const;
+export type Channel = (typeof VALID_CHANNELS)[number];
 
 export const VALID_QUARTERS = ["Q1", "Q2", "Q3", "Q4"] as const;
 export type Quarter = (typeof VALID_QUARTERS)[number];
 
-// Full pattern — each segment separated by a single underscore
+// 5 segments separated by "_"; Product and Description are PascalCase
 export const NAMING_PATTERN =
-  /^(\d{4})_(AMER|EMEA|APJ|LATAM)_(Event|Webinar|Email|Paid|Content)_([A-Z][A-Za-z0-9]+)_(Q[1-4])$/;
+  /^(AMER|EMEA|APJ|LATAM)_(Event|Webinar|Email|Paid|Content)_([A-Z][A-Za-z0-9]+)_([A-Z][A-Za-z0-9]+)_(\d{4}-Q[1-4])$/;
 
 export interface ParsedName {
-  year: number;
   region: Region;
-  type: CampaignType;
-  campaignName: string;
+  channel: Channel;
+  product: string;
+  description: string;
+  year: number;
   quarter: Quarter;
 }
 
@@ -31,76 +32,69 @@ export interface ValidationResult {
 export function validateCampaignName(name: string): ValidationResult {
   const match = NAMING_PATTERN.exec(name);
   if (match) {
-    const [, yearStr, region, type, campaignName, quarter] = match;
+    const [, region, channel, product, description, date] = match;
+    const [yearStr, quarter] = date.split("-");
     return {
       valid: true,
       issues: [],
       parsed: {
-        year: parseInt(yearStr, 10),
         region: region as Region,
-        type: type as CampaignType,
-        campaignName,
+        channel: channel as Channel,
+        product,
+        description,
+        year: parseInt(yearStr, 10),
         quarter: quarter as Quarter,
       },
     };
   }
 
-  // Identify specific violations for the correction prompt
   const issues: string[] = [];
   const parts = name.split("_");
 
-  if (parts.length < 5) {
+  if (parts.length !== 5) {
     issues.push(
-      `Expected 5 underscore-separated segments [Year_Region_Type_CampaignName_Quarter]; got ${parts.length}`
+      `Expected 5 underscore-separated segments [Region_Channel_Product_Description_YYYY-Qn]; got ${parts.length}`
     );
     return { valid: false, issues };
   }
 
-  const [year, region, type, campaignName, quarter, ...extra] = parts;
-  if (extra.length > 0) {
-    issues.push(`Too many segments (${parts.length}); CampaignName may not contain underscores`);
-  }
-  if (!/^\d{4}$/.test(year)) {
-    issues.push(`Year "${year}" must be exactly 4 digits`);
-  }
+  const [region, channel, product, description, date] = parts;
+
   if (!VALID_REGIONS.includes(region as Region)) {
     issues.push(`Region "${region}" must be one of ${VALID_REGIONS.join(", ")}`);
   }
-  if (!VALID_TYPES.includes(type as CampaignType)) {
-    issues.push(`Type "${type}" must be one of ${VALID_TYPES.join(", ")}`);
+  if (!VALID_CHANNELS.includes(channel as Channel)) {
+    issues.push(`Channel "${channel}" must be one of ${VALID_CHANNELS.join(", ")}`);
   }
-  if (!/^[A-Z][A-Za-z0-9]+$/.test(campaignName)) {
-    issues.push(
-      `CampaignName "${campaignName}" must be PascalCase (start with uppercase, alphanumeric only, no spaces or separators)`
-    );
+  if (!/^[A-Z][A-Za-z0-9]+$/.test(product)) {
+    issues.push(`Product "${product}" must be PascalCase (e.g. AcquiaCMS, CloudPlatform)`);
   }
-  if (!/^Q[1-4]$/.test(quarter)) {
-    issues.push(`Quarter "${quarter}" must be Q1, Q2, Q3, or Q4`);
+  if (!/^[A-Z][A-Za-z0-9]+$/.test(description)) {
+    issues.push(`Description "${description}" must be PascalCase (e.g. DrupalSecurityForEnterprises)`);
+  }
+  if (!/^\d{4}-Q[1-4]$/.test(date)) {
+    issues.push(`Date "${date}" must be in YYYY-Qn format (e.g. 2026-Q3)`);
   }
 
   return { valid: false, issues };
 }
 
-/**
- * Assembles a compliant name from its parts.
- * Sanitizes the campaignName segment to PascalCase automatically.
- */
 export function buildCampaignName(
-  year: number,
   region: Region,
-  type: CampaignType,
-  rawCampaignName: string,
+  channel: Channel,
+  product: string,
+  description: string,
+  year: number,
   quarter: Quarter
 ): string {
-  const sanitized = rawCampaignName
-    .split(/[\s_\-]+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join("");
-  return `${year}_${region}_${type}_${sanitized}_${quarter}`;
+  const sanitize = (s: string) =>
+    s.split(/[\s\-_]+/)
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join("");
+  return `${region}_${channel}_${sanitize(product)}_${sanitize(description)}_${year}-${quarter}`;
 }
 
-/** Derives the quarter string from a Date. */
 export function quarterFromDate(date: Date): Quarter {
   const month = date.getMonth() + 1;
   if (month <= 3) return "Q1";
