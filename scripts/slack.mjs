@@ -1,6 +1,9 @@
 #!/usr/bin/env node
-// Slack helper — sends alerts to the MOps channel
-// Usage: node scripts/slack.mjs alert --message "text here"
+// Slack helper — sends alerts and channel messages
+// Usage:
+//   node scripts/slack.mjs alert --message "text here"
+//   node scripts/slack.mjs send --channel "#mops-team" --message "text here"
+//   node scripts/slack.mjs dm [--user SLACK_USER_ID] --message "text here"
 
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
@@ -20,8 +23,8 @@ function loadEnv() {
 }
 loadEnv();
 
-const SLACK_BOT_TOKEN     = process.env.SLACK_BOT_TOKEN     ?? "";
-const SLACK_ALERT_CHANNEL = process.env.SLACK_ALERT_CHANNEL ?? "";
+const SLACK_BOT_TOKEN      = process.env.SLACK_BOT_TOKEN      ?? "";
+const SLACK_ALERT_CHANNEL  = process.env.SLACK_ALERT_CHANNEL  ?? "";
 const SLACK_FELIPE_USER_ID = process.env.SLACK_FELIPE_USER_ID ?? "";
 
 async function post(channel, text) {
@@ -42,6 +45,12 @@ async function sendAlert(message) {
   if (!SLACK_BOT_TOKEN)     throw new Error("SLACK_BOT_TOKEN is not set");
   if (!SLACK_ALERT_CHANNEL) throw new Error("SLACK_ALERT_CHANNEL is not set");
   return post(SLACK_ALERT_CHANNEL, message);
+}
+
+async function sendToChannel(channel, message) {
+  if (!SLACK_BOT_TOKEN) throw new Error("SLACK_BOT_TOKEN is not set");
+  if (!channel)         throw new Error("--channel is required for send command");
+  return post(channel, message);
 }
 
 async function sendDm(userId, message) {
@@ -78,8 +87,9 @@ const args = parseArgs(rest);
 
 try {
   let result;
-  if (command === "alert") result = await sendAlert(args.message ?? "");
-  else if (command === "dm") result = await sendDm(args.user ?? SLACK_FELIPE_USER_ID, args.message ?? "");
+  if      (command === "alert") result = await sendAlert(args.message ?? "");
+  else if (command === "send")  result = await sendToChannel(args.channel ?? "", args.message ?? "");
+  else if (command === "dm")    result = await sendDm(args.user ?? SLACK_FELIPE_USER_ID, args.message ?? "");
   else throw new Error(`Unknown command: ${command}`);
 
   console.log(JSON.stringify(result));
