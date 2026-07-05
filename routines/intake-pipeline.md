@@ -85,43 +85,123 @@ Notes:
 4. **Stop processing this task. Skip to the next task. Do NOT score confidence or proceed to a5.**
 
 #### Sub-step 2: Classify the campaign
-Read the task's custom fields using the Asana MCP.
-Read `src/config/routing.ts` for region→owner mapping and valid enum values.
+
+Read the task using the Asana MCP. The real intake form has these fields — read them exactly
+as submitted; do not expect clean structured data:
+
+| Asana field                  | Variable           |
+|------------------------------|--------------------|
+| Task name                    | `title`            |
+| "What are you Requesting?"   | `request_type_raw` |
+| Task description / Notes     | `notes`            |
+| Due date                     | `proposed_due_date`|
+| Task creator email           | `requester_email`  |
+
+Read `src/config/routing.ts` for region→owner mapping.
 Read `src/config/naming-rules.ts` for valid regions, types, and quarters.
 
-Classify by reasoning about: `campaign_name`, `type`, `region`, `go_live_date`, `goal`,
-`audience`, `key_message`, `budget`.
+---
 
-Determine:
-- **type**: one of `Event`, `Webinar`, `Email`, `Paid`, `Content`
-- **region**: one of `AMER`, `EMEA`, `APJ`, `LATAM`
-- **quarter**: `Q1`/`Q2`/`Q3`/`Q4` derived from `go_live_date`
-- **owner**: from `REGION_OWNERS` in routing config based on region
-- **account_type_target**: which SF Account Type(s) this campaign targets.
-  - `Prospect` — demand-gen, awareness, new logo acquisition
-  - `Customer` — upsell, cross-sell, renewal, product adoption
-  - `Partner` — partner enablement, co-marketing
-  - `Former Customer` — reactivation, win-back, lapsed customer re-engagement
-  - `All` — mixed or undefined audience across multiple account types
-- **business_segment_target**: which Acquia Business Segment this campaign targets.
-  - `Enterprise` — audience revenue explicitly > $1B, or terms like "enterprise", "global 2000"
-  - `Mid-Market` — audience revenue $250M–$1B
-  - `Growth` — audience revenue < $250M, or terms like "SMB", "small business", "startup"
-  - `Public Sector` — **only** when audience industry is exactly `Government - Federal` or
-    `Government - State/Local`. Education is **not** a trigger per SFDC_Accounts.pdf.
-    > If the team explicitly extends this to education verticals, add an inline comment in the
-    > Asana task noting the intentional deviation from the documented rule.
-  - `All Segments` — no segment targeting specified, or multiple segments mixed
-- **confidence**: 0.0–1.0 — how certain you are about the classification
+**Map `request_type_raw` → type** (one of `Event`, `Webinar`, `Email`, `Paid`, `Content`):
+- Contains "event", "conference", "summit", "in-person", "field" → `Event`
+- Contains "webinar", "virtual session", "online session" → `Webinar`
+- Contains "email", "nurture", "newsletter", "send" → `Email`
+- Contains "paid", "ad", "media", "display", "SEM", "PPC", "social ad" → `Paid`
+- Contains "content", "asset", "ebook", "whitepaper", "blog", "guide", "report" → `Content`
+- If the value doesn't clearly match any of the above → type is ambiguous; apply confidence penalty
 
-**Self-correction**: If any field is ambiguous, re-read the full task description and
-check the task name for additional context before assigning a low confidence score.
-Try to resolve ambiguity through reasoning before giving up.
+---
+
+**Derive `go_live_date`:**
+Use `proposed_due_date` directly. Derive quarter (`Q1`–`Q4`) from the month.
+If no due date is set → date is unknown; apply confidence penalty.
+
+---
+
+**Infer `region`** — do not guess; only assign when signals are present:
+
+Scan `title` and `notes` for explicit region signals:
+- "EMEA", "Europe", "UK", "Germany", "France", "Benelux", "DACH", "Nordics", "MEA" → `EMEA`
+- "APJ", "APAC", "Asia Pacific", "ANZ", "Australia", "Japan", "Singapore", "India" → `APJ`
+- "LATAM", "Latin America", "Brazil", "Mexico", "DACH" (if paired with Spanish/Portuguese) → `LATAM`
+- "AMER", "North America", "US", "United States", "Canada", "NA" → `AMER`
+
+Also check `requester_email` domain as a secondary signal only:
+- `.co.uk`, `.de`, `.fr`, `.nl`, `.es`, `.it`, `.se`, `.no`, `.dk` → suggests `EMEA`
+- `.au`, `.jp`, `.sg`, `.in`, `.nz` → suggests `APJ`
+- `.br`, `.mx`, `.co`, `.ar` → suggests `LATAM`
+- `.com` alone → no signal
+
+When text and email signals agree → assign with high confidence.
+When signals are absent or contradictory → leave `region` unknown; apply confidence penalty.
+Do not default to `AMER` when region is unclear.
+
+---
+
+**Infer `product`** from `notes` and `title`:
+
+Scan for Acquia product names: AcquiaCMS, Cloud Platform, Personalization, Site Studio,
+DAM, CDP, Monsido, Optimize, Search, Cohesion, DXP.
+Use the closest match in PascalCase (e.g. "site studio" → `SiteStudio`).
+If multiple products are mentioned, use the most prominent one.
+If no product is mentioned → use `Acquia` (brand-level) and note it as inferred, not stated.
+
+---
+
+**Extract `goal`, `audience`, `key_message`** by reading `notes` in full:
+- `goal`: what outcome does the submitter describe? (MQLs, registrations, pipeline, awareness, etc.)
+- `audience`: who is being targeted? (job titles, industries, company size, account types)
+- `key_message`: what is the campaign about? (the main theme or value proposition)
+
+If `notes` is empty or too vague to extract any of these → apply confidence penalty per missing item.
+
+---
+
+**Infer `budget`** from `notes`:
+Look for dollar amounts, ranges, or explicit "no budget" / "TBD" statements.
+If not mentioned → treat as unknown. Do not default to any value.
+
+---
+
+**Determine `account_type_target`** from `goal` and `audience` signals in `notes`:
+- `Prospect` — demand-gen, awareness, new logo, acquisition language
+- `Customer` — upsell, cross-sell, renewal, adoption, retention language
+- `Partner` — partner enablement, co-marketing, channel language
+- `Former Customer` — win-back, reactivation, lapsed language
+- `All` — mixed or no targeting signal
+
+**Determine `business_segment_target`** from `audience` signals in `notes`:
+- `Enterprise` — revenue > $1B, or terms like "enterprise", "global 2000", "Fortune 500"
+- `Mid-Market` — revenue $250M–$1B, or "mid-market" explicitly stated
+- `Growth` — revenue < $250M, or "SMB", "small business", "startup", "growth"
+- `Public Sector` — **only** when audience industry is exactly `Government - Federal` or
+  `Government - State/Local`. Education is **not** a trigger per SFDC_Accounts.pdf.
+  > If the team explicitly extends this to education verticals, add an inline comment in the
+  > Asana task noting the intentional deviation from the documented rule.
+- `All Segments` — no segment targeting specified, or multiple segments mixed
+
+---
+
+**Assign `confidence`** (start at 1.0, subtract penalties):
+
+| Unclear or missing                          | Penalty |
+|---------------------------------------------|---------|
+| type not clearly mapped from request field  | −0.30   |
+| region not determinable                     | −0.20   |
+| go_live_date missing                        | −0.20   |
+| goal not extractable from notes             | −0.10   |
+| audience not extractable from notes         | −0.10   |
+| key_message not extractable from notes      | −0.10   |
+| product not mentioned (defaulted to Acquia) | −0.05   |
+
+**Self-correction**: Before finalising a low confidence score, re-read `title`, `notes`,
+and `requester_email` once more in full. Resolve ambiguity through reasoning before
+penalising. Only penalise what is genuinely absent or contradictory.
 
 **If confidence < 0.7:**
 1. Use Asana MCP to add comment:
    "MOps AI: Low confidence on this intake ([confidence]).
-   Unclear fields: [list them]. Please clarify and resubmit. — [owner]"
+   Unclear fields: [list each one and what signal was missing]. Please clarify and resubmit. — [owner]"
 2. Set Asana task status to `needs information`.
 3. Add `{ id, status: "flagged", reason: "low-confidence" }` to state.
 4. Run: `node scripts/slack.mjs alert --message "Low confidence intake: [task URL] needs human review"`
