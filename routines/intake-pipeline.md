@@ -42,6 +42,7 @@ Use the Asana MCP `get_tasks` tool to fetch tasks from the intake project
 
 For each task:
 - If its ID is already in state with status `completed` → skip
+- If its ID is in state with status `pre-existing-skip` → skip (backlog seed — predates automation)
 - If its ID is in state with status `pending-approval` → check for approval (see STEP 2b)
 - If its ID is in state with status `pending-sf-creation` → check for SF Campaign ID (see STEP 3)
 - If its ID is not in state at all → run the full pipeline below
