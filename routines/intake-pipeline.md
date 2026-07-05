@@ -42,9 +42,25 @@ Use the Asana MCP `get_tasks` tool to fetch tasks from the intake project
 
 For each task:
 - If its ID is already in state with status `completed` → skip
+- If its ID is in state with status `pre-existing-skip` → skip permanently (this marks tasks that
+  existed in the intake project before this pipeline went live — see "Backlog freeze" below).
+  Do not reprocess these even if they are later edited or commented on.
 - If its ID is in state with status `pending-approval` → check for approval (see STEP 2b)
 - If its ID is in state with status `pending-sf-creation` → check for SF Campaign ID (see STEP 3)
+- Any other status already in state (`flagged`, `incomplete-requirements`, `error`, etc.) → skip;
+  these are terminal until a human resubmits or otherwise changes the task out-of-band.
 - If its ID is not in state at all → run the full pipeline below
+
+**Backlog freeze**: `state/processed-tasks.json` was seeded on 2026-07-05 with every task that was
+already open (not completed) in the intake project at that time — 157 tasks, spanning the New,
+Assigned, In Progress, and Blocked sections — each marked `{ id, status: "pre-existing-skip",
+seededAt }`. This was necessary because those tasks predate the pipeline and don't match its
+expected intake schema (freeform Asana-form notes, no structured region/budget/product fields);
+running a1–a5 against them on a first pass would have posted AI-generated comments, Slack alerts,
+and a segmentation DM against ~150 tasks that real humans are already handling manually. Only tasks
+created after the seed timestamp are eligible to enter the pipeline. To intentionally route an old
+backlog task through the AI pipeline, remove its entry from `state/processed-tasks.json` (or change
+its status) so STEP 1 treats it as new.
 
 If no new tasks found: write a one-line log and exit cleanly.
 
