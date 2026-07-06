@@ -1,104 +1,122 @@
-// §6.1 Naming convention: Region_Channel_Product_Description_YYYY-Qn
-// e.g. EMEA_Webinar_AcquiaCMS_DrupalSecurityForEnterprises_2026-Q3
+// §6.1 Naming convention: type_subtype_region_description_year_quarter
+// e.g. evt_ws_all_dam workshop boston_2026_q3
+// Source: 2026_Revised Taxonomy - campaign.pdf
 
-export const VALID_REGIONS = ["AMER", "EMEA", "APJ", "LATAM"] as const;
+export const TAXONOMY = {
+  "Demand Gen": {
+    abbr: "dg",
+    subtypes: {
+      "Direct Mail":                   "dm",
+      "Display Ad":                    "disp",
+      "Search":                        "srch",
+      "External List":                 "extl",
+      "ABM Advertisement":             "abm",
+      "Content Syndication":           "csyn",
+      "Paid Search":                   "ps",
+      "Gifting":                       "gift",
+      "Agent (Conversational Email)":  "agent",
+    },
+  },
+  "Email": {
+    abbr: "em",
+    subtypes: {
+      "Newsletter":                    "nwsl",
+      "Transactional":                 "ops",
+      "Promotion":                     "promo",
+      "Follow-Up":                     "fu",
+      "Nurture":                       "nur",
+      "Retargeting":                   "rtgt",
+    },
+  },
+  "Event": {
+    abbr: "evt",
+    subtypes: {
+      "Roundtable":                    "rt",
+      "Workshop":                      "ws",
+      "Tradeshow":                     "ts",
+      "Acquia Engage":                 "engage",
+      "User Group":                    "ug",
+      "Corporate Event":               "corp",
+      "Webinar":                       "wbr",
+    },
+  },
+  "Operational": {
+    abbr: "ops",
+    subtypes: {
+      "Operational":                   "ops",
+    },
+  },
+  "Social": {
+    abbr: "soc",
+    subtypes: {
+      "Organic Social":                "org",
+      "Paid Social":                   "paid",
+    },
+  },
+  "Web": {
+    abbr: "web",
+    subtypes: {
+      "Organic":                       "org",
+      "Contact Sales":                 "cs",
+      "Demo":                          "demo",
+      "Web Form":                      "form",
+      "Resources":                     "res",
+      "Clickable Demos":               "cdemo",
+      "AI Agents":                     "ai",
+      "Chatbot":                       "chat",
+      "Corporate/Brand/Sponsorship":   "brand",
+      "AcquiaTV":                      "tv",
+    },
+  },
+} as const;
+
+export type CampaignType = keyof typeof TAXONOMY;
+
+export const VALID_REGIONS = ["AMER", "EMEA", "APJ", "LATAM", "ALL"] as const;
 export type Region = (typeof VALID_REGIONS)[number];
 
-export const VALID_CHANNELS = ["Event", "Webinar", "Email", "Paid", "Content"] as const;
-export type Channel = (typeof VALID_CHANNELS)[number];
-
-export const VALID_QUARTERS = ["Q1", "Q2", "Q3", "Q4"] as const;
+export const VALID_QUARTERS = ["q1", "q2", "q3", "q4"] as const;
 export type Quarter = (typeof VALID_QUARTERS)[number];
 
-// 5 segments separated by "_"; Product and Description are PascalCase
-export const NAMING_PATTERN =
-  /^(AMER|EMEA|APJ|LATAM)_(Event|Webinar|Email|Paid|Content)_([A-Z][A-Za-z0-9]+)_([A-Z][A-Za-z0-9]+)_(\d{4}-Q[1-4])$/;
-
 export interface ParsedName {
+  type: CampaignType;
+  typeAbbr: string;
+  subtype: string;
+  subtypeAbbr: string;
   region: Region;
-  channel: Channel;
-  product: string;
   description: string;
   year: number;
   quarter: Quarter;
 }
 
-export interface ValidationResult {
-  valid: boolean;
-  issues: string[];
-  parsed?: ParsedName;
+export function getTypeAbbr(type: CampaignType): string {
+  return TAXONOMY[type].abbr;
 }
 
-export function validateCampaignName(name: string): ValidationResult {
-  const match = NAMING_PATTERN.exec(name);
-  if (match) {
-    const [, region, channel, product, description, date] = match;
-    const [yearStr, quarter] = date.split("-");
-    return {
-      valid: true,
-      issues: [],
-      parsed: {
-        region: region as Region,
-        channel: channel as Channel,
-        product,
-        description,
-        year: parseInt(yearStr, 10),
-        quarter: quarter as Quarter,
-      },
-    };
-  }
-
-  const issues: string[] = [];
-  const parts = name.split("_");
-
-  if (parts.length !== 5) {
-    issues.push(
-      `Expected 5 underscore-separated segments [Region_Channel_Product_Description_YYYY-Qn]; got ${parts.length}`
-    );
-    return { valid: false, issues };
-  }
-
-  const [region, channel, product, description, date] = parts;
-
-  if (!VALID_REGIONS.includes(region as Region)) {
-    issues.push(`Region "${region}" must be one of ${VALID_REGIONS.join(", ")}`);
-  }
-  if (!VALID_CHANNELS.includes(channel as Channel)) {
-    issues.push(`Channel "${channel}" must be one of ${VALID_CHANNELS.join(", ")}`);
-  }
-  if (!/^[A-Z][A-Za-z0-9]+$/.test(product)) {
-    issues.push(`Product "${product}" must be PascalCase (e.g. AcquiaCMS, CloudPlatform)`);
-  }
-  if (!/^[A-Z][A-Za-z0-9]+$/.test(description)) {
-    issues.push(`Description "${description}" must be PascalCase (e.g. DrupalSecurityForEnterprises)`);
-  }
-  if (!/^\d{4}-Q[1-4]$/.test(date)) {
-    issues.push(`Date "${date}" must be in YYYY-Qn format (e.g. 2026-Q3)`);
-  }
-
-  return { valid: false, issues };
+export function getSubtypeAbbr(type: CampaignType, subtype: string): string | undefined {
+  return (TAXONOMY[type].subtypes as Record<string, string>)[subtype];
 }
 
 export function buildCampaignName(
+  type: CampaignType,
+  subtype: string,
   region: Region,
-  channel: Channel,
-  product: string,
   description: string,
   year: number,
   quarter: Quarter
 ): string {
-  const sanitize = (s: string) =>
-    s.split(/[\s\-_]+/)
-      .filter(Boolean)
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join("");
-  return `${region}_${channel}_${sanitize(product)}_${sanitize(description)}_${year}-${quarter}`;
+  const typeAbbr = getTypeAbbr(type);
+  const subtypeAbbr =
+    getSubtypeAbbr(type, subtype) ??
+    subtype.toLowerCase().replace(/\s+/g, "-");
+  const cleanDesc = description.toLowerCase().trim();
+  return `${typeAbbr}_${subtypeAbbr}_${region.toLowerCase()}_${cleanDesc}_${year}_${quarter}`;
 }
 
 export function quarterFromDate(date: Date): Quarter {
   const month = date.getMonth() + 1;
-  if (month <= 3) return "Q1";
-  if (month <= 6) return "Q2";
-  if (month <= 9) return "Q3";
-  return "Q4";
+  if (month <= 3) return "q1";
+  if (month <= 6) return "q2";
+  if (month <= 9) return "q3";
+  return "q4";
 }

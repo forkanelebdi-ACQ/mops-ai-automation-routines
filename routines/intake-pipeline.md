@@ -102,13 +102,49 @@ Read `src/config/naming-rules.ts` for valid regions, types, and quarters.
 
 ---
 
-**Map `request_type_raw` → type** (one of `Event`, `Webinar`, `Email`, `Paid`, `Content`):
-- Contains "event", "conference", "summit", "in-person", "field" → `Event`
-- Contains "webinar", "virtual session", "online session" → `Webinar`
-- Contains "email", "nurture", "newsletter", "send" → `Email`
-- Contains "paid", "ad", "media", "display", "SEM", "PPC", "social ad" → `Paid`
-- Contains "content", "asset", "ebook", "whitepaper", "blog", "guide", "report" → `Content`
-- If the value doesn't clearly match any of the above → type is ambiguous; apply confidence penalty
+**Map `request_type_raw` → type + subtype** using the taxonomy in `src/config/naming-rules.ts`.
+Both must be determined — they form the first two segments of the campaign name.
+
+| If "What are you Requesting?" contains…              | type         | subtype                      |
+|------------------------------------------------------|--------------|------------------------------|
+| "direct mail"                                        | Demand Gen   | Direct Mail                  |
+| "display ad", "display"                              | Demand Gen   | Display Ad                   |
+| "search" (non-paid, organic)                         | Demand Gen   | Search                       |
+| "external list", "list purchase", "third party"      | Demand Gen   | External List                |
+| "abm", "account-based", "advertisement"              | Demand Gen   | ABM Advertisement            |
+| "content syndication", "syndication"                 | Demand Gen   | Content Syndication          |
+| "paid search", "SEM", "PPC", "google ads"            | Demand Gen   | Paid Search                  |
+| "gifting", "gift"                                    | Demand Gen   | Gifting                      |
+| "conversational email", "agent email"                | Demand Gen   | Agent (Conversational Email) |
+| "newsletter"                                         | Email        | Newsletter                   |
+| "transactional", "operational email"                 | Email        | Transactional                |
+| "promotion", "promo email"                           | Email        | Promotion                    |
+| "follow-up", "follow up email"                       | Email        | Follow-Up                    |
+| "nurture", "drip"                                    | Email        | Nurture                      |
+| "retargeting email", "email retargeting"             | Email        | Retargeting                  |
+| "roundtable"                                         | Event        | Roundtable                   |
+| "workshop"                                           | Event        | Workshop                     |
+| "tradeshow", "trade show", "expo"                    | Event        | Tradeshow                    |
+| "acquia engage", "engage"                            | Event        | Acquia Engage                |
+| "user group", "ug"                                   | Event        | User Group                   |
+| "corporate event"                                    | Event        | Corporate Event              |
+| "webinar", "virtual session"                         | Event        | Webinar                      |
+| "operational"                                        | Operational  | Operational                  |
+| "organic social", "social organic"                   | Social       | Organic Social               |
+| "paid social", "social ad", "social media"           | Social       | Paid Social                  |
+| "organic web", "web organic"                         | Web          | Organic                      |
+| "contact sales"                                      | Web          | Contact Sales                |
+| "demo request", "demo"                               | Web          | Demo                         |
+| "web form", "form"                                   | Web          | Web Form                     |
+| "resources", "resource center"                       | Web          | Resources                    |
+| "clickable demo", "interactive demo"                 | Web          | Clickable Demos              |
+| "ai agent", "ai assistant"                           | Web          | AI Agents                    |
+| "chatbot"                                            | Web          | Chatbot                      |
+| "brand", "corporate", "sponsorship"                  | Web          | Corporate/Brand/Sponsorship  |
+| "acquiatv", "acquia tv", "tv", "video"               | Web          | AcquiaTV                     |
+
+If `request_type_raw` doesn't clearly resolve to a type+subtype pair → both are ambiguous; apply confidence penalty.
+If type resolves but subtype is ambiguous → scan `notes` and `title` for clarification before penalising.
 
 ---
 
@@ -187,12 +223,12 @@ If not mentioned → treat as unknown. Do not default to any value.
 | Unclear or missing                          | Penalty |
 |---------------------------------------------|---------|
 | type not clearly mapped from request field  | −0.30   |
+| subtype not determinable                    | −0.15   |
 | region not determinable                     | −0.20   |
 | go_live_date missing                        | −0.20   |
 | goal not extractable from notes             | −0.10   |
 | audience not extractable from notes         | −0.10   |
 | key_message not extractable from notes      | −0.10   |
-| product not mentioned (defaulted to Acquia) | −0.05   |
 
 **Self-correction**: Before finalising a low confidence score, re-read `title`, `notes`,
 and `requester_email` once more in full. Resolve ambiguity through reasoning before
@@ -210,28 +246,30 @@ penalising. Only penalise what is genuinely absent or contradictory.
 ---
 
 ### STEP 2b — a5: Generate campaign name (HARD GATE)
-Read `src/config/naming-rules.ts` for the allowed values (regions, channels).
+Read `src/config/naming-rules.ts` for the full type/subtype taxonomy and abbreviations.
 
-**Format**: `Region_Channel_Product_Description_YYYY-Qn`
-**Example**: `EMEA_Webinar_AcquiaCMS_DrupalSecurityForEnterprises_2026-Q3`
+**Format**: `type_subtype_region_description_year_quarter`
+**Example**: `evt_ws_all_dam workshop boston_2026_q3`
+
+All segments lowercase. Underscores separate segments. Spaces are allowed within the description.
 
 **Generate the name:**
-1. `Region` — from the classification in STEP 2a (AMER, EMEA, APJ, or LATAM)
-2. `Channel` — from the classification in STEP 2a (Event, Webinar, Email, Paid, or Content)
-3. `Product` — PascalCase name of the Acquia product this campaign promotes (e.g. `AcquiaCMS`,
-   `CloudPlatform`, `SiteStudio`). Use `Acquia` for brand-level or cross-product campaigns.
-4. `Description` — PascalCase, 2–4 words drawn from `key_message` and `goal`. Must be specific
-   enough that any team member instantly knows what the campaign is about.
-   **Self-correction**: if your first draft is generic (e.g. `EmailCampaign`), reread the intake and try again.
-5. `Date` — `YYYY-Qn` derived from `go_live_date` (e.g. `2026-Q3`)
+1. `type` — abbreviation from `TAXONOMY[type].abbr` (e.g. `evt`, `em`, `dg`, `soc`, `web`, `ops`)
+2. `subtype` — abbreviation from `TAXONOMY[type].subtypes[subtype]` (e.g. `ws`, `nur`, `abm`)
+3. `region` — lowercase region from classification (`amer`, `emea`, `apj`, `latam`, or `all` for global)
+4. `description` — 2–5 lowercase words drawn from `key_message`, `goal`, and `title`.
+   Must be specific enough that any team member instantly knows what the campaign is about.
+   **Self-correction**: if your first draft is generic (e.g. "email campaign"), reread the intake and try again.
+5. `year` — 4-digit year derived from `go_live_date` (e.g. `2026`)
+6. `quarter` — lowercase quarter derived from `go_live_date` (e.g. `q3`)
 
-Assemble: `[Region]_[Channel]_[Product]_[Description]_[YYYY-Qn]`
+Assemble: `[type]_[subtype]_[region]_[description]_[year]_[quarter]`
 
 **Post the generated name for confirmation:**
 Add Asana comment:
 "MOps AI: Campaign name generated from your intake.
 📛 `[generatedName]`
-Reply 'approved' to proceed, or suggest a revised Product or Description (PascalCase, no underscores) and I'll rebuild. — [owner]"
+Reply 'approved' to proceed, or suggest a revised description (lowercase words, no underscores) and I'll rebuild. — [owner]"
 
 Set Asana task status to `approval`.
 Add `{ id, status: "pending-approval", suggestedName: "[generatedName]" }` to state.
@@ -244,8 +282,8 @@ Skip to next task. Do NOT run a2 yet.
   - Set Asana task status to `approval`.
   - Update state to `{ id, status: "approval-received", approvedName: "[suggestedName]" }`.
   - Continue to STEP 3 (a2).
-- If a comment contains a revised Product or Description (PascalCase word, no underscores):
-  - Rebuild using the same Region, Channel, and Date; replace only the revised segment(s).
+- If a comment contains a revised description (lowercase words):
+  - Rebuild using the same type, subtype, region, year, and quarter; replace only the description.
   - Post: "MOps AI: Updated name → `[newName]`. Reply 'approved' to confirm. — [owner]"
   - Update state to `{ id, status: "pending-approval", suggestedName: "[newName]" }`.
 - If no response yet:
