@@ -9,19 +9,26 @@ campaign intake submissions from Asana and run them through the full a1→a5→a
 - **Read / Write**: Read config files and update state
 
 ## Asana status mirroring
-Every time `state/processed-tasks.json` is updated, also update the Asana task's status field
+Every time `state/processed-tasks.json` is updated, also update the Asana task's status
 using the Asana MCP. This keeps team visibility in Asana without requiring access to JSON files
 or Slack history (source: MOPS Taxonomy Training — Asana is the system of record).
 
-| Internal state              | Asana status field value  |
-|-----------------------------|---------------------------|
-| `incomplete-requirements`   | `incomplete requirements` |
-| `flagged`                   | `needs information`       |
-| `pending-approval`          | `approval`                |
-| `approval-received`         | `approval`                |
-| `pending-sf-creation`       | `in a sprint`             |
-| `completed`                 | `completed`               |
-| `error`                     | `needs information`       |
+"Status" on the live intake project is not a native Asana field — it's the custom field named
+**"MOPS- Status"**, a fixed single-select enum. It does not have options matching the internal
+state names below, so map to the closest existing option instead of writing the literal string:
+
+| Internal state              | MOPS- Status value      |
+|-----------------------------|--------------------------|
+| `incomplete-requirements`   | `Incomplete`             |
+| `flagged`                   | `Waiting for Feedback`   |
+| `pending-approval`          | `In Progress`            |
+| `approval-received`         | `In Progress`            |
+| `pending-sf-creation`       | `In Progress`            |
+| `completed`                 | `Completed`              |
+| `error`                     | `Blocked`                |
+
+If a future run finds this field renamed or its options changed, re-map by closest intent rather
+than failing — do not block the pipeline on an exact string match.
 
 ---
 

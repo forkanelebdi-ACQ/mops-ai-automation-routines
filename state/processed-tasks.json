@@ -1,1 +1,37 @@
-[]
+[
+  {
+    "id": "1216252912009684",
+    "status": "incomplete-requirements",
+    "missingFields": ["Subject Line / Preheader", "Banners / creative link", "Content Copy", "URLs", "Audience Segmentation", "Send Time(s)", "Exclusion List(s)"]
+  },
+  {
+    "id": "1216250159752085",
+    "status": "incomplete-requirements",
+    "missingFields": ["Subject Line / Preheader", "Banners / creative link", "Content Copy", "URLs", "Audience Segmentation", "Send Time(s)", "Exclusion List(s)"]
+  },
+  {
+    "id": "1216228405634854",
+    "status": "incomplete-requirements",
+    "missingFields": ["Audience Segmentation", "Send Time(s)", "Exclusion List(s)"]
+  },
+  {
+    "id": "1216208690766919",
+    "status": "incomplete-requirements",
+    "missingFields": ["Audience Segmentation", "Send Time(s)", "Exclusion List(s)"]
+  },
+  {
+    "id": "1213043596946502",
+    "status": "incomplete-requirements",
+    "missingFields": ["Subject Line / Preheader", "Banners / creative link", "Content Copy", "URLs", "Audience Segmentation", "Send Time(s)", "Exclusion List(s)"]
+  },
+  {
+    "id": "1216366218376741",
+    "status": "incomplete-requirements",
+    "missingFields": ["Banners / creative link", "Audience Segmentation", "Exclusion List(s)"]
+  },
+  {
+    "id": "1216138040996299",
+    "status": "pending-approval",
+    "suggestedName": "em_promo_all_acquiatv perficient partner interview_2026_q3"
+  }
+]
