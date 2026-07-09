@@ -134,6 +134,33 @@ async function addMemberStatuses(args) {
   return { ok: true, statusesAdded: statuses.length };
 }
 
+async function findCampaign(args) {
+  const { name, id } = args;
+
+  if (id) {
+    try {
+      const result = await sfRequest("GET", `/sobjects/Campaign/${id}?fields=Id,Name`);
+      return { found: true, sfCampaignId: result.Id, name: result.Name };
+    } catch {
+      return { found: false };
+    }
+  }
+
+  if (name) {
+    const escaped = name.replace(/'/g, "\\'");
+    const soql = encodeURIComponent(
+      `SELECT Id, Name FROM Campaign WHERE Name = '${escaped}' LIMIT 1`
+    );
+    const result = await sfRequest("GET", `/query?q=${soql}`);
+    if (result.records?.length > 0) {
+      return { found: true, sfCampaignId: result.records[0].Id, name: result.records[0].Name };
+    }
+    return { found: false };
+  }
+
+  throw new Error("find-campaign requires --name or --id");
+}
+
 async function queryCampaigns() {
   const soql = encodeURIComponent(
     "SELECT Id, Name, NumberOfContacts, ConnectedCampaignId " +
@@ -170,9 +197,10 @@ const args = parseArgs(rest);
 
 try {
   let result;
-  if (command === "create-campaign")     result = await createCampaign(args);
+  if (command === "create-campaign")       result = await createCampaign(args);
+  else if (command === "find-campaign")    result = await findCampaign(args);
   else if (command === "add-member-statuses") result = await addMemberStatuses(args);
-  else if (command === "query-campaigns")    result = await queryCampaigns();
+  else if (command === "query-campaigns") result = await queryCampaigns();
   else throw new Error(`Unknown command: ${command}`);
 
   console.log(JSON.stringify(result));

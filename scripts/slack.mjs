@@ -42,20 +42,28 @@ async function post(channel, text) {
 }
 
 async function sendAlert(message) {
-  if (!SLACK_BOT_TOKEN)     throw new Error("SLACK_BOT_TOKEN is not set");
-  if (!SLACK_ALERT_CHANNEL) throw new Error("SLACK_ALERT_CHANNEL is not set");
+  if (!SLACK_BOT_TOKEN || !SLACK_ALERT_CHANNEL) {
+    console.log(JSON.stringify({ ok: false, warning: "Slack not configured — skipped", message }));
+    return { ok: false, skipped: true };
+  }
   return post(SLACK_ALERT_CHANNEL, message);
 }
 
 async function sendToChannel(channel, message) {
-  if (!SLACK_BOT_TOKEN) throw new Error("SLACK_BOT_TOKEN is not set");
-  if (!channel)         throw new Error("--channel is required for send command");
+  if (!SLACK_BOT_TOKEN) {
+    console.log(JSON.stringify({ ok: false, warning: "SLACK_BOT_TOKEN not configured — skipped", channel, message }));
+    return { ok: false, skipped: true };
+  }
+  if (!channel) throw new Error("--channel is required for send command");
   return post(channel, message);
 }
 
 async function sendDm(userId, message) {
-  if (!SLACK_BOT_TOKEN) throw new Error("SLACK_BOT_TOKEN is not set");
-  if (!userId)          throw new Error("--user is required for dm command");
+  if (!SLACK_BOT_TOKEN) {
+    console.log(JSON.stringify({ ok: false, warning: "SLACK_BOT_TOKEN not configured — skipped", userId, message }));
+    return { ok: false, skipped: true };
+  }
+  if (!userId) throw new Error("--user is required for dm command");
 
   const openRes = await fetch("https://slack.com/api/conversations.open", {
     method: "POST",

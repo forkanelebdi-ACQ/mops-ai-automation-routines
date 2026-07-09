@@ -40,14 +40,23 @@ If the file does not exist, treat state as `[]`.
 Use the Asana MCP `get_tasks` tool to fetch tasks from the intake project
 (project GID is in `ASANA_INTAKE_PROJECT_GID` env var — read from `.env` if needed).
 
-For each task:
+**Intake-form filter — apply before any other logic:**
+The project contains many task types (report requests, list uploads, template sub-tasks, etc.).
+Only process a task if it passes ALL of the following checks:
+1. The task has a custom field named "What are you Requesting?" that is non-empty.
+2. The task is not a sub-task of another task (i.e. it has no parent task).
+3. The task is not marked complete in Asana.
+
+If a task fails any of these checks → skip it silently. Do NOT comment on it or add it to state.
+
+For each task that passes the filter:
 - If its ID is already in state with status `completed` → skip
 - If its ID is in state with status `pre-existing-skip` → skip (backlog seed — predates automation)
 - If its ID is in state with status `pending-approval` → check for approval (see STEP 2b)
 - If its ID is in state with status `pending-sf-creation` → check for SF Campaign ID (see STEP 3)
 - If its ID is not in state at all → run the full pipeline below
 
-If no new tasks found: write a one-line log and exit cleanly.
+If no qualifying tasks found: write a one-line log and exit cleanly.
 
 ---
 
