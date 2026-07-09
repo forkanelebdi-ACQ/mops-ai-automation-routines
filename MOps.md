@@ -18,11 +18,12 @@ talk to each other: the Asana intake form, Asana tasks, Salesforce, and Pardot. 
 each campaign request and re-keys it into Asana and Salesforce by hand. That is slow, drifts
 from naming convention, and silently breaks Pardot–SF sync.
 
-**Goal:** from a *single* Asana form submission, automatically parse intake, validate the name,
-create the Salesforce campaign with the correct member-status scaffolding and the validated name from the previous step, generate the asset
-checklist and Asana subtasks, draft a campaign brief, and monitor sync health — turning a
-days-long manual process into a minutes-long automated one, with a human only on the uncertain
-cases.
+**Goal:** from a *single* Asana form submission, automatically check the intake is complete, parse
+it, validate the name, build the complete Salesforce campaign spec (member-status scaffolding, AM
+territories, targeting context) for the SF admin to create, generate the asset checklist and
+Asana subtasks, draft a campaign brief, and monitor sync health — turning a days-long manual
+process into a minutes-long, mostly-automated one, with a human only on the uncertain cases and on
+the Salesforce write itself.
 
 The two slide decks in this repo are the canonical overview:
 - `MOps_AI-Powered_Campaign_Workflow.pdf` — the original intern project plan (problem, the six automations, 8-week plan).
@@ -42,6 +43,12 @@ a1 (triage)  →  a5 (naming GATE)  →  a2 (SF build)  →  a3 (assets)  →  a
   The naming gate is the single control that authorizes Salesforce record creation.
   Violating this order pollutes Salesforce with badly-named records and breaks reporting.
 - **`a6` (sync watchdog) is NOT in the per-ticket flow.** It runs on a schedule (cron).
+- **Two filters run before `a1` even scores confidence**: an intake-form filter (only tasks with a
+  non-empty "What are you Requesting?" field, no parent task, and not marked complete are
+  processed — everything else is skipped silently, added specifically to stop the pipeline firing
+  on report requests, list uploads, and other non-intake tasks in the same project) and a
+  completeness gate (checks the 8 required intake fields; if anything is missing, the task is
+  marked `incomplete-requirements` and skipped entirely, without ever reaching classification).
 
 ---
 
@@ -49,12 +56,17 @@ a1 (triage)  →  a5 (naming GATE)  →  a2 (SF build)  →  a3 (assets)  →  a
 
 | # | Name | What it does | Key systems |
 |---|------|--------------|-------------|
-| a1 | Intake triage | Reads the form, classifies type & region, extracts fields, flags missing/contradictory data, routes to the regional owner, sets priority, confirms to requestor | Asana, Claude |
-| a2 | SF campaign spec (read-only) | **Claude Code has read-only SF access.** Checks SF for an existing campaign by name; if absent, builds the complete spec (name, type, dates, budget, member-status list) and posts it as an Asana comment for the SF admin to create manually. Sets state to `pending-sf-creation`. On the next run, scans comments for an 18-char SF Campaign ID (starts with `701`), verifies it via a read-only SF lookup, then unblocks a3/a4. Escalates via Slack after 24 h with no reply. Admin is also asked to link the Pardot connected campaign in Account Engagement. | Salesforce (read), Asana, Slack |
-| a3 | Asset checklist + subtasks | Generates the per-type asset checklist and creates every Asana subtask | Asana, Claude |
-| a4 | Brief drafting | Turns intake into a one-page brief (objective, audience, messaging, KPIs, assets, timeline); attaches to the Asana task and SF campaign | Claude, Asana, Salesforce |
-| a5 | Name generator **(gate)** | Generates the canonical campaign name from intake fields (`Region_Type_Topic_Year_Quarter`), posts it to Asana for owner confirmation, and gates `a2` until approved | Claude |
-| a6 | Sync watchdog | Daily scan comparing Pardot vs SF member counts; Slack alert if sync broken >2h; detects orphaned Pardot assets; weekly health report | Pardot, Salesforce, Slack |
+| a1 | Intake triage | Filters to genuine intake tasks, runs a completeness gate on 8 required fields (stops and marks `incomplete-requirements` if anything is missing), then classifies type & subtype & region, extracts fields (goal/audience/key message/budget, account-type & business-segment targets), routes to the regional owner, scores confidence, confirms to requestor | Asana, Claude |
+| a2 | SF campaign spec (read-only) | **Claude Code has read-only SF access.** Checks SF for an existing campaign by name; if absent, resolves AM territories (`getAmTerritoriesForCampaign`), posts the complete spec (name, type, dates, budget, member-status list, account-type/business-segment targeting, AM territories) as an Asana comment for the SF admin to create manually, and DMs Felipe (`SEGMENTATION_OWNER`) a segmentation brief via Slack. Sets state to `pending-sf-creation`. On the next run, scans comments for an 18-char SF Campaign ID (starts with `701`), verifies it via a read-only SF lookup, then unblocks a3/a4. Escalates via Slack after 24h with no reply, or immediately if business days to go-live are within the type's `SLA_ESCALATION_DAYS` threshold. Admin is also asked to link the Pardot connected campaign in Account Engagement. | Salesforce (read), Asana, Slack |
+| a3 | Asset checklist + subtasks | Runs a send-calendar conflict check first (Tuesday block for Welcome Nurture, 3-email/7-day segment limit, 48h audience-overlap warning) and blocks on conflicts; once clear, generates the per-type (or per-subtype, e.g. Webinar) asset checklist and creates every Asana subtask | Asana, Claude, Google Sheets |
+| a4 | Brief drafting | Turns intake into a one-page brief (objective, audience, messaging, KPIs, assets, timeline); posts it to Asana (system of record) **and** to Slack `#mops-team` | Claude, Asana, Slack |
+| a5 | Name generator **(gate)** | Generates the canonical campaign name from intake fields (`type_subtype_region_description_year_quarter`, all lowercase), posts it to Asana for owner confirmation, and gates `a2` until approved | Claude |
+| a6 | Sync watchdog | Daily scan comparing Pardot vs SF member counts; Slack alert on divergence; detects orphaned Pardot assets; weekly health report; escalates persistent (3+ consecutive day) divergence | Pardot, Salesforce, Slack |
+
+> **One-time setup routine — not one of the six:** `routines/seed-backlog.md` runs once, before the
+> pipeline goes live, to freeze the pre-existing Asana backlog. It marks every already-open intake
+> task as `pre-existing-skip` in state so the hourly pipeline only processes tasks created after
+> that point. It is not scheduled and must not be run a second time.
 
 ---
 
@@ -104,16 +116,37 @@ maintainable *without* engineering:
 
 ### 6.1 Naming convention
 ```
-[Region]_[Type]_[Topic]_[Year]_[Quarter]
-e.g.  EMEA_Webinar_DrupalSecurity_2026_Q3
+type_subtype_region_description_year_quarter
+e.g.  evt_ws_all_dam workshop boston_2026_q3
 ```
-- **Region** — one of `AMER`, `EMEA`, `APJ`, `LATAM` (from intake field, not typed by requestor).
-- **Type** — one of `Event`, `Webinar`, `Email`, `Paid`, `Content` (from intake field).
-- **Topic** — **Claude generates this** from the intake's `key_message`, `goal`, and `audience`. 1–3 PascalCase words. Specific enough to distinguish this campaign from similar ones; concise enough to scan in a Salesforce dropdown. No spaces, hyphens, or special characters inside the segment. Examples: `DrupalSecurity`, `CloudMigrationSummit`, `MidMarketNurture`.
+- **Type** — one of 6 top-level types in `src/config/naming-rules.ts` → `TAXONOMY`: `Demand Gen`,
+  `Email`, `Event`, `Operational`, `Social`, `Web`. Mapped from the intake's "What are you
+  Requesting?" field.
+- **Subtype** — one of 35 subtypes total across the 6 types, e.g. Event → Roundtable / Workshop /
+  Tradeshow / Acquia Engage / User Group / Corporate Event / Webinar; Email → Newsletter /
+  Transactional / Promotion / Follow-Up / Nurture / Retargeting; Demand Gen → Direct Mail /
+  Display Ad / Search / External List / ABM Advertisement / Content Syndication / Paid Search /
+  Gifting / Agent (Conversational Email); Social → Organic Social / Paid Social; Web → Organic /
+  Contact Sales / Demo / Web Form / Resources / Clickable Demos / AI Agents / Chatbot /
+  Corporate/Brand/Sponsorship / AcquiaTV; Operational → Operational.
+- **Region** — one of `amer`, `emea`, `apj`, `latam`, or `all` for global campaigns (lowercase in the name).
+- **Description** — **Claude generates this** from the intake's `key_message`, `goal`, and
+  `audience`. 2–5 lowercase words, space-separated within the segment. Specific enough that any
+  team member instantly knows what the campaign is about.
 - **Year** — 4 digits derived from `go_live_date`.
-- **Quarter** — `Q1`–`Q4` derived from `go_live_date`.
+- **Quarter** — lowercase `q1`–`q4` derived from `go_live_date`.
 
-**How naming works:** The requestor never types a name in this format. Claude derives all five segments from the intake form fields, assembles the canonical name, and posts it to Asana for the regional owner to confirm. The owner approves or provides a one-word adjustment to the Topic segment. The gate blocks `a2` until confirmed.
+Everything in the assembled name is lowercase; underscores separate the six segments. `type` and
+`subtype` use the abbreviations in `TAXONOMY` (e.g. `evt`, `wbr`, `dg`, `em`, `soc`, `web`, `ops`).
+
+**How naming works:** The requestor never types a name in this format. Claude derives all six
+segments from the intake form fields, assembles the canonical name, and posts it to Asana for the
+regional owner to confirm. The owner approves or provides a revised description and Claude rebuilds
+just that segment. The gate blocks `a2` until confirmed.
+
+> This replaced the original PascalCase `[Region]_[Type]_[Topic]_[Year]_[Quarter]` /
+> `[Year]_[Region]_[Type]_[CampaignName]_[Quarter]` convention (types: Event, Webinar, Email, Paid,
+> Content) per the 2026 revised taxonomy.
 
 ### 6.2 Region → owner routing
 | Region | Owner |
@@ -125,28 +158,94 @@ e.g.  EMEA_Webinar_DrupalSecurity_2026_Q3
 
 Escalate if the owner does not respond within **24 hours**.
 
-### 6.3 Member statuses by campaign type (applied by `a2`)
-- **Event:** Registered, Attended, No Show, Walk-in, Booth Visit
-- **Webinar:** Registered, Attended, No Show, On-Demand View
-- **Email:** Sent, Opened, Clicked, Bounced, Unsubscribed
-- **Paid / Ad:** Impression, Clicked, Form Fill, Converted
-- **Content:** Downloaded, Viewed, Engaged, Converted
+**SLA escalation override:** regardless of the 24-hour timer, if the business days remaining
+until `go_live_date` are at or below the type's threshold in `SLA_ESCALATION_DAYS`
+(`src/config/routing.ts`), escalate immediately — applies to both the name-approval (a5) and
+SF-creation (a2) follow-ups:
 
-### 6.4 Asset checklists by type (turned into Asana subtasks by `a3`)
-- **Event:** landing page + form · email invite ×3 · reminder ×2 · follow-up ×2 · SF campaign + child campaigns · speaker brief + run-of-show · post-event attended vs no-show cadence
+| Type | Threshold (business days) |
+|------|---------------------------|
+| Event (incl. Webinar subtype) | 7 |
+| Email | 5 |
+| Demand Gen | 5 |
+| Web | 4 |
+| Social | 4 |
+| Operational | 3 |
+
+> TODO(ground-truth): Operational/Social thresholds are carried over from their closest retired
+> equivalent and need confirming against the live SLA doc.
+
+**Business segment targets** (`BUSINESS_SEGMENTS`): `Enterprise`, `Mid-Market`, `Growth`,
+`Public Sector` (Government - Federal / Government - State/Local industries only), `All Segments`.
+
+**Account type targets** (`ACCOUNT_TYPE_TARGETS`): `Prospect`, `Customer`, `Partner`,
+`Former Customer`, `All`.
+
+**AM territories:** `a2` resolves the AM territory list for a campaign via
+`getAmTerritoriesForCampaign(region, businessSegment, industry?)` (`src/config/routing.ts`) — it
+intersects `SEGMENT_AM_TERRITORY_GROUPS[segment]` with `REGION_AM_TERRITORIES[region]`, falling
+back to the full region list when the segment is `All Segments` or the intersection is empty. This
+list is included in the SF spec comment so AMs can flag relevant accounts for member inclusion.
+
+**Segmentation owner:** `SEGMENTATION_OWNER` is **Felipe** — he receives a Slack DM
+(`scripts/slack.mjs dm`) with a segmentation/targeting brief every time `a2` posts a new SF spec,
+so he can build the target list and confirm audience filters in Pardot before go-live.
+
+### 6.3 Member statuses by campaign type (read via `getMemberStatuses`, listed in `a2`'s spec comment)
+- **Demand Gen:** Impression, Clicked, Form Fill, Converted
+- **Email:** Sent, Opened, Clicked, Bounced, Unsubscribed
+- **Event:** Registered, Attended, No Show, Walk-in, Booth Visit
+  - **Webinar (subtype override):** Registered, Attended, No Show, On-Demand View
+- **Operational:** Sent, Delivered, Failed
+- **Social:** Impression, Clicked, Engaged, Converted
+- **Web:** Viewed, Downloaded, Engaged, Converted
+
+`getMemberStatuses(type, subtype)` in `src/config/member-statuses.ts` checks for a subtype
+override (currently only Webinar) before falling back to the type default. These are listed in
+the SF spec comment for the admin to apply — `a2` does not write them to Salesforce directly.
+
+### 6.4 Asset checklists by type (turned into Asana subtasks by `a3`, via `getAssetChecklist`)
+- **Demand Gen:** ad copy variants (headline/body/CTA) · landing page + form aligned · UTMs + tracking pixels · content asset to DAM + linked · brief shared with demand-gen lead
 - **Email:** HTML build + plain text · list-pull segmentation brief · Pardot email record + send config · UTM params · A/B subject variants
-- **Paid / Content:** ad copy variants (headline/body/CTA) · landing page + form aligned · UTMs + tracking pixels · content asset to DAM + linked · brief shared with demand-gen lead
+- **Event:** landing page + form · email invite ×3 · reminder ×2 · follow-up ×2 (attended / no-show) · SF campaign + child campaigns · speaker brief · run-of-show
+  - **Webinar (subtype override):** landing page + form · email invite ×3 · reminder ×2 · follow-up ×2 · on-demand recording asset · SF campaign
+- **Operational:** send config + trigger logic documented · QA pass on trigger conditions · suppression/exclusion list confirmed
+- **Social:** post copy variants (2–3) · creative asset sized per platform · UTM params · posting schedule confirmed · brief shared with social lead
+- **Web:** page copy/content brief · creative asset to DAM + linked · UTMs + tracking pixels · page live + QA'd · brief shared with web lead
+
+`getAssetChecklist(type, subtype)` in `src/config/asset-checklists.ts` checks for a subtype
+override (currently only Webinar) before falling back to the type default.
 
 ### 6.5 Triage guardrails (`a1`)
-- Priorities: `standard`, `urgent`, `needs-info`.
-- Confidence floor ≈ **0.7** → below it, route to human review.
+- **Intake-form filter** (runs before anything else, on every fetched task): only process a task
+  if it has a non-empty "What are you Requesting?" custom field, has no parent task, and is not
+  marked complete. Anything else is skipped silently — no comment, no state entry.
+- **Completeness gate** (runs before classification): checks 8 required intake fields (Subject
+  Line/Preheader, Banners/creative, Content Copy, URLs, Audience Segmentation, Dates, Send Times,
+  Exclusion Lists — some conditional by type). If anything is missing, comment with the missing
+  fields, set Asana status to `incomplete requirements`, record `incomplete-requirements` in
+  state, and stop — classification never runs.
+- Confidence floor = **`CONFIDENCE_FLOOR` = 0.7** (`src/config/routing.ts`) → below it, route to human review.
 - Low-confidence or missing/contradictory fields → human review, do not proceed.
 - Requestor can override the classification via an Asana comment.
 - **Every AI decision is logged per ticket** (audit trail).
 
 ### 6.6 Brief inputs/outputs (`a4`)
 - In: campaign name, type, owner, audience, region, goal (MQLs / pipeline / awareness / retention), go-live date, budget range, key message, linked/parent programs.
-- Out: one-page brief (objective, audience, messaging, KPIs), recommended asset list, timeline with milestones; auto-attached to Asana task + SF campaign.
+- Out: one-page brief (objective, audience, messaging, KPIs), recommended asset list, timeline with milestones; posted to the Asana task (system of record) **and** to Slack `#mops-team`.
+
+### 6.7 Send calendar rules (checked by `a3` via `scripts/sheets.mjs check-calendar`)
+Enforced against the `SendCalendar` Google Sheet before the asset checklist is created:
+- **Tuesday block** — Tuesdays are reserved for Welcome Nurture sends; any other type proposed on
+  a Tuesday is a conflict.
+- **3-email/7-day limit** — no more than 3 marketing email sends to the same business segment in
+  any 7-day window.
+- **48-hour audience-overlap warning** — any other campaign targeting the same segment within 48
+  hours is flagged as a non-blocking warning.
+
+Conflicts block the checklist (Asana comment + resolution required, reply `calendar-cleared`).
+Warnings are noted but do not block. A cleared send is registered via `scripts/sheets.mjs
+log-send` so future campaigns see it.
 
 ---
 
@@ -165,33 +264,65 @@ Escalate if the owner does not respond within **24 hours**.
 - Idempotency is handled via **`state/processed-tasks.json`** — a JSON array of
   `{ id, status, approvedName?, sfCampaignId? }` objects. Claude reads this at the start of
   every run and skips tasks already marked `completed`.
-- Statuses: `flagged` | `pending-approval` | `approval-received` | `pending-sf-creation` | `completed` | `error`.
+- Statuses: `incomplete-requirements` | `flagged` | `pending-approval` | `approval-received` |
+  `pending-sf-creation` | `completed` | `error` | `pre-existing-skip`.
+  - `incomplete-requirements` — the completeness gate in a1 found missing required fields; classification never ran.
   - `pending-sf-creation` — spec posted to Asana, waiting for the SF admin to create the campaign and reply with the Campaign ID.
+  - `pre-existing-skip` — set once by the one-time `routines/seed-backlog.md` run for every task that predates the automation; STEP 1 of the intake pipeline skips these forever.
+
+### Asana status mirroring
+Every state write also sets the Asana task's status field, so team visibility works from Asana
+alone — no dependency on the JSON state file or Slack history (Asana is the system of record):
+
+| Internal state              | Asana status field value  |
+|-----------------------------|---------------------------|
+| `incomplete-requirements`   | `incomplete requirements` |
+| `flagged`                   | `needs information`       |
+| `pending-approval`          | `approval`                |
+| `approval-received`         | `approval`                |
+| `pending-sf-creation`       | `in a sprint`             |
+| `completed`                 | `completed`               |
+| `error`                     | `needs information`       |
 
 ### Human-in-the-loop
 - **Naming corrections**: Claude posts an Asana comment with the suggested fix, sets status to
   `pending-approval`, and polls for "approved" in comments on the next run(s).
 - **24-hour escalation**: if no approval after 24 h, a Slack alert fires via
   `node scripts/slack.mjs alert`.
+- **SLA escalation override**: regardless of the 24h timer, if business days remaining until
+  go-live are at or below `SLA_ESCALATION_DAYS[type]` (`src/config/routing.ts`), escalate
+  immediately — applies to both name-approval (a5) and SF-creation (a2) follow-ups.
 
 ### Calling external systems
-All calls to Salesforce, Slack, and Google Sheets go through scripts:
+All calls to Salesforce, Pardot, Slack, and Google Sheets go through scripts:
 ```bash
-# Salesforce — READ-ONLY (Claude Code does not have write access to SF)
-node scripts/salesforce.mjs find-campaign --name "..."       # look up by exact name
-node scripts/salesforce.mjs find-campaign --id "701..."      # verify an ID posted by the admin
-node scripts/salesforce.mjs list-active-campaigns            # used by sync watchdog (a6)
+# Salesforce — READ-ONLY in the automated flow (Claude Code never creates/mutates SF records)
+node scripts/salesforce.mjs find-campaign --name "..."       # look up by exact name (a2, live)
+node scripts/salesforce.mjs find-campaign --id "701..."      # verify an ID posted by the admin (a2, live)
+node scripts/salesforce.mjs query-campaigns                  # used by sync watchdog (a6, live)
+# create-campaign and add-member-statuses exist in the script but are legacy/manual-test-only —
+# not called by the automated routine; useful for a human running the script locally (see README).
 
-# Slack, Google Sheets
-node scripts/slack.mjs alert --message "..."
+# Pardot — read-only in the automated flow
+node scripts/pardot.mjs get-member-count --campaign-id "..." # used by sync watchdog (a6, live)
+# create-campaign exists in the script but is not called by any routine — the SF admin links the
+# connected campaign manually in Account Engagement per the a2 spec comment.
+
+# Slack
+node scripts/slack.mjs alert --message "..."                          # health/escalation alerts
+node scripts/slack.mjs send --channel "#mops-team" --message "..."    # a4 brief
+node scripts/slack.mjs dm --message "..."                             # a2 segmentation brief → Felipe
+
+# Google Sheets
 node scripts/sheets.mjs log --task-id "..." --automation "..." --decision "..."
 node scripts/sheets.mjs get-similar --limit 3
+node scripts/sheets.mjs check-calendar --date "..." --type "..." --segment "..."             # a3, before checklist
+node scripts/sheets.mjs log-send --date "..." --type "..." --segment "..." --campaign "..."  # a3, after clear
 ```
 Scripts output JSON on stdout. Claude reads the JSON and handles errors.
 
 > **Pardot:** The Pardot connected campaign is created by the SF admin as part of the manual
 > creation step. The spec comment in a2 instructs the admin to link it in Account Engagement.
-> `scripts/pardot.mjs` is used only by the sync watchdog (a6) for read-only list comparison.
 
 ### Error handling pattern
 - On a recoverable error: adjust the offending field and retry once.
@@ -199,11 +330,19 @@ Scripts output JSON on stdout. Claude reads the JSON and handles errors.
   `error` in state, and **continue to the next task** — one failure must never stop the whole run.
 
 ### Watchdog (a6) — separate routine
-`routines/sync-watchdog.md` runs daily (`0 9 * * *`) and weekly (`0 8 * * 1`):
-1. Call `node scripts/salesforce.mjs list-active-campaigns` and `node scripts/pardot.mjs list-campaigns`
-2. Compare member counts; flag divergence or sync broken > 2 h
-3. `node scripts/slack.mjs alert` the owner; collect orphaned Pardot assets
-4. Weekly: build and post a sync-health report
+`routines/sync-watchdog.md` runs daily at 09:00 UTC (Mondays also trigger the weekly report inside
+the same run):
+1. Call `node scripts/salesforce.mjs query-campaigns` and, for each result, `node scripts/pardot.mjs get-member-count`
+2. Compare member counts; any non-zero delta is a finding, a missing `pardotCampaignId` is an orphan
+3. `node scripts/slack.mjs alert` per finding and per orphan batch; escalate if the same campaign
+   diverges 3+ consecutive days (`state/watchdog-history.json`)
+4. Monday only: build and post a weekly sync-health report
+
+### Backlog seed (one-time) — separate routine
+`routines/seed-backlog.md` is **not scheduled**. It runs once, manually, before the intake
+pipeline goes live: it fetches every incomplete task in the intake project, and for any task not
+already in state, adds `{ id, status: "pre-existing-skip" }`. From then on, STEP 1 of the intake
+pipeline silently skips any task in that status forever. Do not run it a second time.
 
 ---
 
@@ -213,15 +352,16 @@ Scripts output JSON on stdout. Claude reads the JSON and handles errors.
 mops-ai-automation/
 ├── MOps.md                        # this file — project memory
 ├── package.json                   # Node.js deps (for scripts only)
-├── .env.example
+├── .env                           # Local credentials (gitignored; no .env.example — see §8 env vars)
 ├── routines/
 │   ├── intake-pipeline.md         # Claude Code routine: a1 → a5 gate → a2 → a3 → a4 (hourly)
-│   └── sync-watchdog.md           # Claude Code routine: a6 Pardot/SF sync check (daily + weekly)
+│   ├── sync-watchdog.md           # Claude Code routine: a6 Pardot/SF sync check (daily + weekly)
+│   └── seed-backlog.md            # one-time routine: freezes the pre-existing Asana backlog
 ├── scripts/                       # Node.js ESM scripts called via Bash from routines
-│   ├── salesforce.mjs             # find-campaign (by name or ID), list-active-campaigns — READ-ONLY
-│   ├── pardot.mjs                 # list-campaigns — read-only; used by sync watchdog only
-│   ├── slack.mjs                  # alert
-│   └── sheets.mjs                 # Google Sheets audit log, get-similar
+│   ├── salesforce.mjs             # find-campaign, query-campaigns — READ-ONLY, used live; create-campaign/add-member-statuses are legacy/manual-test-only
+│   ├── pardot.mjs                 # get-member-count — used live by a6; create-campaign is manual/unused by routines
+│   ├── slack.mjs                  # alert, send, dm
+│   └── sheets.mjs                 # log, get-similar, check-calendar, log-send
 ├── state/
 │   └── processed-tasks.json       # idempotency state — array of { id, status, ... }
 ├── src/
@@ -249,7 +389,7 @@ mops-ai-automation/
 | **2–3** | **Front gate** | `routines/intake-pipeline.md` with a1 triage + a5 naming gate wired up. Test with a mock Asana task. |
 | **3–4** | **SF spec + polling** | `scripts/salesforce.mjs` read-only commands (find-campaign by name/ID). Wire a2 spec-posting and ID-polling into routine as STEP 3. No SF write access — campaign creation is delegated to the SF admin via Asana comment. |
 | **4–5** | **Generate** | a3 asset checklist via Asana MCP subtask creation + a4 brief posting as Asana comment. |
-| **5** | **Watchdog** | `routines/sync-watchdog.md` + `scripts/pardot.mjs` list-campaigns. Schedule daily + weekly. |
+| **5** | **Watchdog** | `routines/sync-watchdog.md` + `scripts/pardot.mjs get-member-count`. Schedule daily + weekly. |
 | **6** | **QA** | Playwright e2e (submit the real form → assert the pipeline ran); fix bugs; state idempotency check (run twice, verify no duplicates). |
 | **7** | **UAT + go-live** | UAT with one regional owner; handoff playbook; go live. The human-in-the-loop gate is the Asana comment approval flow built into the routine. |
 
@@ -274,6 +414,11 @@ fast-follows. Don't let the watchdog or brief drafting block the core launch.
 - **Pardot creation is also delegated to the SF admin** as part of the spec comment — the admin
   links the connected campaign in Account Engagement after creating the SF record.
   `scripts/pardot.mjs` is used only by the sync watchdog (a6) for read-only comparison.
+- `scripts/salesforce.mjs create-campaign` / `add-member-statuses` and `scripts/pardot.mjs
+  create-campaign` exist for a human to run locally (see README) but are **not called by the
+  automated routine** — the live flow only calls `find-campaign`, `query-campaigns`, and
+  `get-member-count`.
+- **a4's brief is posted to both Asana (system of record) and Slack `#mops-team`** — never Slack-only.
 - **All Asana reads/writes use the Asana MCP** — never call the Asana REST API directly.
 - **Log every AI decision** to the audit store (Google Sheets) via `node scripts/sheets.mjs log`.
 - Secrets come from **environment variables only**; never commit real keys.

@@ -198,16 +198,6 @@ Do not default to `AMER` when region is unclear.
 
 ---
 
-**Infer `product`** from `notes` and `title`:
-
-Scan for Acquia product names: AcquiaCMS, Cloud Platform, Personalization, Site Studio,
-DAM, CDP, Monsido, Optimize, Search, Cohesion, DXP.
-Use the closest match in PascalCase (e.g. "site studio" → `SiteStudio`).
-If multiple products are mentioned, use the most prominent one.
-If no product is mentioned → use `Acquia` (brand-level) and note it as inferred, not stated.
-
----
-
 **Extract `goal`, `audience`, `key_message`** by reading `notes` in full:
 - `goal`: what outcome does the submitter describe? (MQLs, registrations, pipeline, awareness, etc.)
 - `audience`: who is being targeted? (job titles, industries, company size, account types)
@@ -370,7 +360,7 @@ Targeting context (for SF campaign setup and list-building):
   AM Territories:     [resolved territory list from step 2]
 
 Member Statuses to apply:
-[list the statuses for this type from the naming-rules config]
+[list the statuses from `src/config/member-statuses.ts` via `getMemberStatuses(type, subtype)`]
 
 Action required:
 1. Create this campaign in Salesforce using the exact name above.
@@ -488,7 +478,8 @@ Rules enforced by the script (flag any conflict in an Asana comment — do NOT s
 2. Proceed to sub-step 2. Include any warnings in the asset checklist comment below.
 
 #### Sub-step 2: Asset checklist
-Read `src/config/asset-checklists.ts` to get the asset list for the campaign type.
+Read `src/config/asset-checklists.ts` and call `getAssetChecklist(type, subtype)` to get the
+asset list — some subtypes (e.g. Webinar) override the type-level default.
 
 For each asset item, use the Asana MCP `create_task` to create a subtask under the intake task.
 

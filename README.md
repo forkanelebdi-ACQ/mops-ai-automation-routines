@@ -11,7 +11,7 @@ Every hour, a Claude Code cloud routine polls the Asana intake project. For each
 | Step | Stage | What happens |
 |------|-------|-------------|
 | 1 | **a1 — Intake Triage** | Claude classifies the campaign (type, region, quarter, owner). Stops if confidence < 70%. |
-| 2 | **a5 — Naming Enforcer** | Validates the campaign name against the `[Year]_[Region]_[Type]_[Name]_[Quarter]` convention. Blocks a2 if invalid. Posts suggested correction to Asana for human approval. |
+| 2 | **a5 — Naming Enforcer** | Generates the campaign name against the `type_subtype_region_description_year_quarter` convention. Blocks a2 until the regional owner replies "approved". |
 | 3 | **a2 — SF Campaign Build** | Creates the Salesforce campaign, adds member statuses, creates the Pardot connected campaign. |
 | 4 | **a3 — Asset Checklist** | Creates one Asana subtask per required asset based on campaign type. |
 | 5 | **a4 — Brief Drafting** | Claude writes a one-page campaign brief and posts it as an Asana comment. |
@@ -88,17 +88,17 @@ state/
 ```bash
 git clone https://github.com/flebdi/mops-ai-automation.git
 cd mops-ai-automation
-cp .env.example .env
+touch .env
 ```
 
-Fill in `.env` with your credentials. See the [Environment variables](#environment-variables) section below.
+Fill in `.env` with your credentials — see the [Environment variables](#environment-variables) section below for the full list of keys.
 
 ### Test a script locally
 
 ```bash
 node scripts/salesforce.mjs create-campaign \
-  --name "2026_EMEA_Webinar_Test_Q3" \
-  --type "Webinar" \
+  --name "evt_wbr_emea_test_2026_q3" \
+  --type "Event" \
   --region "EMEA" \
   --go-live "2026-09-01" \
   --owner "Aayushi"
@@ -136,23 +136,24 @@ The two live routines are at:
 
 ## Campaign naming convention
 
-All campaigns must follow this exact format:
+All campaigns follow this exact format (source: `src/config/naming-rules.ts`, the 2026 revised taxonomy):
 
 ```
-[Year]_[Region]_[Type]_[CampaignName]_[Quarter]
+[type]_[subtype]_[region]_[description]_[year]_[quarter]
 ```
 
-**Example:** `2026_EMEA_Webinar_DrupalSecurity_Q3`
+**Example:** `evt_wbr_emea_drupal_security_2026_q3`
 
 | Segment | Valid values |
 |---------|-------------|
-| Year | 4-digit year (e.g. `2026`) |
-| Region | `AMER`, `EMEA`, `APJ`, `LATAM` |
-| Type | `Event`, `Webinar`, `Email`, `Paid`, `Content` |
-| CampaignName | PascalCase, no spaces or special characters |
-| Quarter | `Q1`, `Q2`, `Q3`, `Q4` |
+| type | abbreviation for one of the 6 top-level types — `evt`, `em`, `dg`, `soc`, `web`, `ops` |
+| subtype | abbreviation for one of the 35 subtypes under that type (e.g. `wbr` for Webinar, `nur` for Nurture) |
+| region | `amer`, `emea`, `apj`, `latam`, or `all` for global campaigns |
+| description | 2–5 lowercase words drawn from the intake's key message and goal |
+| year | 4-digit year (e.g. `2026`) |
+| quarter | `q1`, `q2`, `q3`, `q4` |
 
-If the name doesn't match, the agent auto-corrects it, validates its own suggestion, then posts it to Asana for the regional owner to approve before continuing.
+Claude generates the name from the intake fields and posts it to Asana for the regional owner to approve (or request a revised description) before `a2` continues.
 
 ---
 

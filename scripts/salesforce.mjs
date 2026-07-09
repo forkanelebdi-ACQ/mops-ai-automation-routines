@@ -30,20 +30,32 @@ const SF_PASSWORD      = process.env.SF_PASSWORD      ?? "";
 const SF_SECURITY_TOKEN = process.env.SF_SECURITY_TOKEN ?? "";
 const SF_RECORD_TYPE_ID = process.env.SF_CAMPAIGN_RECORD_TYPE_ID ?? "TODO_SF_CAMPAIGN_RECORD_TYPE_ID";
 
+// Mirrors src/config/member-statuses.ts — duplicated here because this script runs under
+// plain Node (no TS build step) and can't import the .ts config module directly.
 const MEMBER_STATUSES = {
-  Event:   ["Registered", "Attended", "No Show", "Walk-in", "Booth Visit"],
-  Webinar: ["Registered", "Attended", "No Show", "On-Demand View"],
-  Email:   ["Sent", "Opened", "Clicked", "Bounced", "Unsubscribed"],
-  Paid:    ["Impression", "Clicked", "Form Fill", "Converted"],
-  Content: ["Downloaded", "Viewed", "Engaged", "Converted"],
+  "Demand Gen": ["Impression", "Clicked", "Form Fill", "Converted"],
+  Email:        ["Sent", "Opened", "Clicked", "Bounced", "Unsubscribed"],
+  Event:        ["Registered", "Attended", "No Show", "Walk-in", "Booth Visit"],
+  Operational:  ["Sent", "Delivered", "Failed"],
+  Social:       ["Impression", "Clicked", "Engaged", "Converted"],
+  Web:          ["Viewed", "Downloaded", "Engaged", "Converted"],
 };
 
 const RESPONDED_STATUSES = {
-  Event:   ["Attended", "Walk-in", "Booth Visit"],
+  "Demand Gen": ["Form Fill", "Converted"],
+  Email:        ["Clicked"],
+  Event:        ["Attended", "Walk-in", "Booth Visit"],
+  Operational:  ["Delivered"],
+  Social:       ["Clicked", "Engaged", "Converted"],
+  Web:          ["Downloaded", "Engaged", "Converted"],
+};
+
+const MEMBER_STATUS_SUBTYPE_OVERRIDES = {
+  Webinar: ["Registered", "Attended", "No Show", "On-Demand View"],
+};
+
+const RESPONDED_STATUS_SUBTYPE_OVERRIDES = {
   Webinar: ["Attended", "On-Demand View"],
-  Email:   ["Clicked"],
-  Paid:    ["Form Fill", "Converted"],
-  Content: ["Downloaded", "Engaged", "Converted"],
 };
 
 // --- Auth ---
@@ -118,9 +130,9 @@ async function createCampaign(args) {
 }
 
 async function addMemberStatuses(args) {
-  const { "campaign-id": campaignId, type } = args;
-  const statuses = MEMBER_STATUSES[type] ?? [];
-  const responded = new Set(RESPONDED_STATUSES[type] ?? []);
+  const { "campaign-id": campaignId, type, subtype } = args;
+  const statuses = MEMBER_STATUS_SUBTYPE_OVERRIDES[subtype] ?? MEMBER_STATUSES[type] ?? [];
+  const responded = new Set(RESPONDED_STATUS_SUBTYPE_OVERRIDES[subtype] ?? RESPONDED_STATUSES[type] ?? []);
 
   for (const label of statuses) {
     await sfRequest("POST", "/sobjects/CampaignMemberStatus", {
