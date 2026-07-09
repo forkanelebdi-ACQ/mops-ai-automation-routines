@@ -10890,5 +10890,10 @@
   {
     "id": "1213657348085524",
     "status": "pre-existing-skip"
+  },
+  {
+    "id": "1216204496909086",
+    "status": "pre-existing-skip",
+    "note": "Not in original seed but created_at (2026-07-01) predates the 2026-07-05 backlog-freeze cutoff. Human-managed campaign already in flight: SF campaign 701Pb00004AbHjeIAF created manually by Harish, registration landing page live, audience resolved via direct Asana comments between Harish and Michelle Glass. Running a1-a5 now would post a duplicate naming/approval flow and segmentation DM against work already completed manually -- exactly the scenario the backlog freeze exists to prevent. Treated as a missed backlog entry rather than a new intake; flagged for human review, not run through automation."
   }
 ]
