@@ -9,19 +9,26 @@ campaign intake submissions from Asana and run them through the full a1→a5→a
 - **Read / Write**: Read config files and update state
 
 ## Asana status mirroring
-Every time `state/processed-tasks.json` is updated, also update the Asana task's status field
+Every time `state/processed-tasks.json` is updated, also update the Asana task's status
 using the Asana MCP. This keeps team visibility in Asana without requiring access to JSON files
 or Slack history (source: MOPS Taxonomy Training — Asana is the system of record).
 
-| Internal state              | Asana status field value  |
-|-----------------------------|---------------------------|
-| `incomplete-requirements`   | `incomplete requirements` |
-| `flagged`                   | `needs information`       |
-| `pending-approval`          | `approval`                |
-| `approval-received`         | `approval`                |
-| `pending-sf-creation`       | `in a sprint`             |
-| `completed`                 | `completed`               |
-| `error`                     | `needs information`       |
+"Status" on the live intake project is not a native Asana field — it's the custom field named
+**"MOPS- Status"**, a fixed single-select enum. It does not have options matching the internal
+state names below, so map to the closest existing option instead of writing the literal string:
+
+| Internal state              | MOPS- Status value      |
+|-----------------------------|--------------------------|
+| `incomplete-requirements`   | `Incomplete`             |
+| `flagged`                   | `Waiting for Feedback`   |
+| `pending-approval`          | `In Progress`            |
+| `approval-received`         | `In Progress`            |
+| `pending-sf-creation`       | `In Progress`            |
+| `completed`                 | `Completed`              |
+| `error`                     | `Blocked`                |
+
+If a future run finds this field renamed or its options changed, re-map by closest intent rather
+than failing — do not block the pipeline on an exact string match.
 
 ---
 
@@ -43,7 +50,13 @@ Use the Asana MCP `get_tasks` tool to fetch tasks from the intake project
 **Intake-form filter — apply before any other logic:**
 The project contains many task types (report requests, list uploads, template sub-tasks, etc.).
 Only process a task if it passes ALL of the following checks:
-1. The task has a custom field named "What are you Requesting?" that is non-empty.
+1. The task carries a "what is being requested" signal — a non-empty custom field whose name or
+   value indicates a campaign/request type (e.g. "What are you Requesting?", "Request Type",
+   "Project Type", "MOPs - Project Subtype", "Campaign Type", "Requesting Team", or similar).
+   Match on the field's intent, not an exact name — the live Asana form's field names can drift
+   from this doc. If the task has no such custom field at all, but the task name/description
+   clearly reads as a campaign request (not a checklist item, report, or admin sub-task), that's
+   enough — use judgment rather than requiring a specific field to exist.
 2. The task is not a sub-task of another task (i.e. it has no parent task).
 3. The task is not marked complete in Asana.
 
@@ -110,16 +123,19 @@ Notes:
 
 #### Sub-step 2: Classify the campaign
 
-Read the task using the Asana MCP. The real intake form has these fields — read them exactly
-as submitted; do not expect clean structured data:
+Read the task using the Asana MCP. Read fields exactly as submitted; do not expect clean
+structured data, and don't assume fixed field names — the live form drifts from this doc.
 
-| Asana field                  | Variable           |
-|------------------------------|--------------------|
-| Task name                    | `title`            |
-| "What are you Requesting?"   | `request_type_raw` |
-| Task description / Notes     | `notes`            |
-| Due date                     | `proposed_due_date`|
-| Task creator email           | `requester_email`  |
+| Asana field                                                                          | Variable           |
+|---------------------------------------------------------------------------------------|--------------------|
+| Task name                                                                            | `title`            |
+| The custom field carrying the request/campaign type signal (whichever one applies — see the STEP 1 filter list) | `request_type_raw` |
+| Task description / Notes                                                            | `notes`            |
+| Due date                                                                             | `proposed_due_date`|
+| Task creator email                                                                   | `requester_email`  |
+
+If no single custom field cleanly holds the request type, combine signals from the task
+name, description, and any type/subtype-flavored custom fields to determine `request_type_raw`.
 
 Read `src/config/routing.ts` for region→owner mapping.
 Read `src/config/naming-rules.ts` for valid regions, types, and quarters.
@@ -129,7 +145,7 @@ Read `src/config/naming-rules.ts` for valid regions, types, and quarters.
 **Map `request_type_raw` → type + subtype** using the taxonomy in `src/config/naming-rules.ts`.
 Both must be determined — they form the first two segments of the campaign name.
 
-| If "What are you Requesting?" contains…              | type         | subtype                      |
+| If `request_type_raw` contains…                       | type         | subtype                      |
 |------------------------------------------------------|--------------|------------------------------|
 | "direct mail"                                        | Demand Gen   | Direct Mail                  |
 | "display ad", "display"                              | Demand Gen   | Display Ad                   |
