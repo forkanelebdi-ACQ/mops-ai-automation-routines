@@ -372,7 +372,7 @@
       <div class="step-body">
         <span class="tag gate">Gate — must pass before next step</span>
         <h3>Check the Campaign Name</h3>
-        <p>The campaign name must follow a strict format: <strong>2026_EMEA_Webinar_DrupalSecurity_Q3</strong>. If it doesn't match, the system suggests a corrected name and waits for a human to approve it before touching Salesforce. Nothing gets created with a bad name.</p>
+        <p>The campaign name must follow a strict format: <strong>evt_wbr_emea_drupal_security_2026_q3</strong>. Claude generates the name from the intake and waits for a human to approve it before touching Salesforce. Nothing gets created with a bad name.</p>
       </div>
     </div>
 
@@ -380,8 +380,8 @@
       <div class="step-badge">A2</div>
       <div class="step-body">
         <span class="tag auto">Automatic</span>
-        <h3>Build the Salesforce Campaign</h3>
-        <p>Once the name is approved, the system creates the Salesforce campaign with all the right fields, sets up the member statuses (Registered, Attended, No Show…), links any parent campaign, and connects it to Pardot — all in one go.</p>
+        <h3>Build the Salesforce Campaign Spec</h3>
+        <p>Once the name is approved, the system checks Salesforce for an existing campaign, then posts the complete spec (fields, targeting, member statuses) to Asana for the SF admin to create — Claude has read-only Salesforce access by design, so nothing gets written automatically.</p>
       </div>
     </div>
 
@@ -429,12 +429,12 @@
     </div>
     <div class="track-card">
       <div class="icon">🖥️</div>
-      <h3>Trigger.dev Dashboard</h3>
+      <h3>Claude Code Routines Dashboard</h3>
       <p>Every pipeline run is visible here. The team can see which step completed, which failed, and re-run it — no code required.</p>
     </div>
     <div class="track-card">
       <div class="icon">📊</div>
-      <h3>Airtable Audit Log</h3>
+      <h3>Google Sheets Audit Log</h3>
       <p>Every AI decision is recorded here — what the system decided, how confident it was, and whether it routed to a human.</p>
     </div>
     <div class="track-card">
@@ -450,7 +450,7 @@
 <section id="owners">
   <div class="label">The Team</div>
   <h2>Regional owners stay<br/>in control</h2>
-  <p>The system automatically routes each campaign to the right owner based on region. They never need to touch code — everything is managed through Asana, Slack, and the Trigger.dev dashboard.</p>
+  <p>The system automatically routes each campaign to the right owner based on region. They never need to touch code — everything is managed through Asana, Slack, and the Claude Code routines dashboard.</p>
   <div class="owners-row">
     <div class="owner-card">
       <div class="avatar">👤</div>
