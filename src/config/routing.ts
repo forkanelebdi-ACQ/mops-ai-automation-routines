@@ -66,13 +66,18 @@ export const CONFIDENCE_FLOOR = 0.7;
  * Source: MOps Requests_SLA_Timeline_Requirements_2025.pdf.
  * If business days until go-live <= threshold and the task is still blocked,
  * escalate immediately regardless of how long it has been pending.
+ * Webinar keeps the Event-level threshold via its subtype override; the other new types
+ * (Operational, Social) are carried over from their closest retired equivalent pending
+ * ground-truth confirmation from the SLA doc.
+ * TODO(ground-truth): confirm Operational/Social thresholds against the live SLA doc.
  */
 export const SLA_ESCALATION_DAYS: Record<string, number> = {
-  Event:   7,
-  Webinar: 7,
-  Email:   5,
-  Paid:    5,
-  Content: 4,
+  Event:        7,
+  Email:        5,
+  "Demand Gen": 5,
+  Web:          4,
+  Social:       4,
+  Operational:  3,
 };
 
 export function getOwner(region: Region): string {
