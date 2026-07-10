@@ -10890,5 +10890,10 @@
   {
     "id": "1213657348085524",
     "status": "pre-existing-skip"
+  },
+  {
+    "id": "1216204496909086",
+    "status": "pre-existing-skip",
+    "reason": "not part of the original 2026-07-05 backlog seed — flagged 2026-07-10 by the intake pipeline's first live pass. Task ('London Partner Party MOPs') was already being actively handled end-to-end by a human MOps admin (Harish) before the pipeline ever saw it: SFDC campaign 701Pb00004AbHjeIAF created 2026-07-03, landing page live 2026-07-08, audience criteria (partners/prospects + customers, Northern Europe) clarified with the requester as recently as 2026-07-09. Running a1-a5 now would post stale 'missing fields' / naming-approval / SF-spec comments into an already-resolved live human thread. Left untouched in Asana; skipping permanently. Flagged for human review — see routine run notes 2026-07-10."
   }
 ]
