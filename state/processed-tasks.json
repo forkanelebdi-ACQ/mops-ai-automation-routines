@@ -21,7 +21,12 @@
   },
   {
     "id": "1216366218376741",
-    "status": "pre-existing-skip"
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Banners / creative link",
+      "Audience Segmentation",
+      "Exclusion List(s)"
+    ]
   },
   {
     "id": "1216259201694852",
@@ -65,15 +70,38 @@
   },
   {
     "id": "1216252912009684",
-    "status": "pre-existing-skip"
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Subject Line / Preheader",
+      "Banners / creative link",
+      "Content Copy",
+      "URLs",
+      "Audience Segmentation",
+      "Send Time(s)",
+      "Exclusion List(s)"
+    ]
   },
   {
     "id": "1216250159752085",
-    "status": "pre-existing-skip"
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Subject Line / Preheader",
+      "Banners / creative link",
+      "Content Copy",
+      "URLs",
+      "Audience Segmentation",
+      "Send Time(s)",
+      "Exclusion List(s)"
+    ]
   },
   {
     "id": "1216228405634854",
-    "status": "pre-existing-skip"
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Audience Segmentation",
+      "Send Time(s)",
+      "Exclusion List(s)"
+    ]
   },
   {
     "id": "1216214453970979",
@@ -117,7 +145,12 @@
   },
   {
     "id": "1216208690766919",
-    "status": "pre-existing-skip"
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Audience Segmentation",
+      "Send Time(s)",
+      "Exclusion List(s)"
+    ]
   },
   {
     "id": "1216208026304126",
@@ -145,7 +178,8 @@
   },
   {
     "id": "1216138040996299",
-    "status": "pre-existing-skip"
+    "status": "pending-approval",
+    "suggestedName": "em_promo_all_acquiatv perficient partner interview_2026_q3"
   },
   {
     "id": "1216079223445077",
@@ -625,7 +659,16 @@
   },
   {
     "id": "1213043596946502",
-    "status": "pre-existing-skip"
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Subject Line / Preheader",
+      "Banners / creative link",
+      "Content Copy",
+      "URLs",
+      "Audience Segmentation",
+      "Send Time(s)",
+      "Exclusion List(s)"
+    ]
   },
   {
     "id": "1213490629824678",
@@ -10889,6 +10932,18 @@
   },
   {
     "id": "1213657348085524",
+    "status": "pre-existing-skip"
+  },
+  {
+    "id": "1216461142225009",
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Send Time(s)",
+      "Exclusion List(s)"
+    ]
+  },
+  {
+    "id": "1216204496909086",
     "status": "pre-existing-skip"
   }
 ]
