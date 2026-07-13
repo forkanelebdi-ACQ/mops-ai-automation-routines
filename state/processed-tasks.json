@@ -10890,5 +10890,19 @@
   {
     "id": "1213657348085524",
     "status": "pre-existing-skip"
+  },
+  {
+    "id": "1216461142225009",
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Send Time(s)",
+      "Exclusion List(s)"
+    ],
+    "note": "Reconciled 2026-07-13: task missing from state despite an existing incomplete-requirements comment already posted in Asana on 2026-07-11 (prior run state-write gap). No new comment posted; humans have since proceeded manually."
+  },
+  {
+    "id": "1216204496909086",
+    "status": "pre-existing-skip",
+    "note": "Reconciled 2026-07-13: created 2026-07-01 (before 2026-07-05 seed cutoff) but missing from original seed. Campaign is already substantially built by humans (SF campaign, landing page, 6 subtasks). Treated as backlog per seed policy intent; no pipeline actions taken."
   }
 ]
