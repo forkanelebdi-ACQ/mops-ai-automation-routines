@@ -10890,5 +10890,18 @@
   {
     "id": "1213657348085524",
     "status": "pre-existing-skip"
+  },
+  {
+    "id": "1216540776727329",
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Subject Line / Preheader",
+      "Banners / creative link",
+      "Content Copy",
+      "URLs",
+      "Audience Segmentation",
+      "Send Time(s)",
+      "Exclusion List(s)"
+    ]
   }
 ]
