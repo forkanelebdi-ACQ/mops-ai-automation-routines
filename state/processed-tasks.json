@@ -10890,5 +10890,23 @@
   {
     "id": "1213657348085524",
     "status": "pre-existing-skip"
+  },
+  {
+    "id": "1216540776727329",
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Subject Line / Preheader",
+      "Banners / creative link",
+      "Content Copy",
+      "URLs",
+      "Audience Segmentation",
+      "Send Time(s)",
+      "Exclusion List(s)"
+    ]
+  },
+  {
+    "id": "1216204496909086",
+    "status": "pre-existing-skip",
+    "note": "Already substantially executed manually by MOps/requester (SF campaign, landing page, and audience already confirmed via Asana comments) before this run found it unseeded; treating as pre-existing to avoid duplicating in-flight human work."
   }
 ]
