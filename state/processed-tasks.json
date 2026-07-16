@@ -10890,5 +10890,36 @@
   {
     "id": "1213657348085524",
     "status": "pre-existing-skip"
+  },
+  {
+    "id": "1216637677679770",
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Subject Line / Preheader",
+      "Banners / creative link",
+      "URLs",
+      "Audience Segmentation",
+      "Send Time(s)",
+      "Exclusion List(s)"
+    ]
+  },
+  {
+    "id": "1216540776727329",
+    "status": "incomplete-requirements",
+    "missingFields": [
+      "Subject Line / Preheader",
+      "Banners / creative link",
+      "Content Copy",
+      "URLs",
+      "Audience Segmentation",
+      "Send Time(s)",
+      "Exclusion List(s)"
+    ],
+    "note": "AI-generated comment already present on task from prior manual test run; not duplicated."
+  },
+  {
+    "id": "1216204496909086",
+    "status": "pre-existing-skip",
+    "note": "Created 2026-07-01 [pre-seed], missed by 2026-07-05 backlog seed. Campaign already fully in-flight and handled manually by humans (SFDC campaign 701Pb00004AbHjeIAF already created, landing page live, sends scheduled) -- running a1-a5 would post irrelevant/conflicting AI comments onto a live human-run thread. Added to backlog freeze retroactively; flagged to owner in run summary."
   }
 ]
